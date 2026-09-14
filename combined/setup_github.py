@@ -1,19 +1,14 @@
 #!/usr/bin/env python3
 """
 GitHub Repository Setup Script for Quantum-SIH-Cracker Organization.
-
-This script helps create all 4 repositories on GitHub with proper settings.
-Run this AFTER creating the GitHub organization and authenticating.
+Creates all 4 PRIVATE repositories, GitHub teams, invites members, sets branch protection.
 
 Prerequisites:
     pip install PyGithub
-    
+
 Usage:
     python setup_github.py --token YOUR_GITHUB_PAT
-    
-    OR set environment variable:
-    export GITHUB_TOKEN=YOUR_PAT
-    python setup_github.py
+    OR: export GITHUB_TOKEN=YOUR_PAT && python setup_github.py
 """
 
 import argparse
@@ -21,135 +16,212 @@ import os
 import subprocess
 import sys
 
+# ─────────────────────────────────────────────────────────────────────────────
+# FILL IN YOUR TEAM MEMBERS' GITHUB USERNAMES BEFORE RUNNING
+# ─────────────────────────────────────────────────────────────────────────────
+TEAM_MEMBERS = {
+    "hardware": [
+        "arpitkumar81008-cmd",   # Arpit (Hardware Lead — org owner)
+        # "hardware-member-2",   # ← add more if needed
+    ],
+    "ml": [
+        # "ml-lead-username",
+        # "ml-member-2-username",
+    ],
+    "server": [
+        # "server-lead-username",
+        # "server-member-2-username",
+    ],
+}
+
 REPOS = [
     {
         "name": "sih-hardware-firmware",
-        "description": "ESP32-S3 firmware, INMP441 microphone integration, on-device KWS (TENet INT8 TFLite) — Smart India Hackathon 2026",
+        "description": "ESP32-S3 firmware, INMP441 mic, on-device KWS (TENet INT8 TFLite) — SIH 2026",
         "topics": ["esp32-s3", "firmware", "keyword-spotting", "tflite-micro", "arduino", "sih2026"],
-        "local_path": None,  # Separate repo — Hardware Team creates this on their machine
+        "team": "hardware",
+        "local_path": None,
     },
     {
         "name": "sih-ml-models",
-        "description": "Keyword Spotting model training pipeline, MFCC features, INT8 TFLite optimization — Smart India Hackathon 2026",
+        "description": "KWS model training, MFCC pipeline, INT8 TFLite optimization — SIH 2026",
         "topics": ["machine-learning", "keyword-spotting", "tflite", "tensorflow", "mfcc", "sih2026"],
-        "local_path": None,  # ML Team creates this on their machine
+        "team": "ml",
+        "local_path": None,
     },
     {
         "name": "sih-server-backend",
-        "description": "FastAPI server, Silero VAD, Faster-Whisper ASR, live telemetry dashboard — Smart India Hackathon 2026",
-        "topics": ["fastapi", "whisper", "voice-activity-detection", "python", "speech-to-text", "sih2026"],
-        "local_path": None,  # Server Team creates this on their machine
+        "description": "FastAPI server, Silero VAD, Faster-Whisper ASR, live dashboard — SIH 2026",
+        "topics": ["fastapi", "whisper", "vad", "python", "speech-to-text", "sih2026"],
+        "team": "server",
+        "local_path": None,
     },
     {
         "name": "sih-combined-system",
-        "description": "Combined workflow, integration docs, protocol specification — Smart India Hackathon 2026 | Quantum-SIH-Cracker",
+        "description": "Combined workflow docs, protocol spec, integration — SIH 2026",
         "topics": ["sih2026", "voice-assistant", "esp32", "edge-ai", "hackathon"],
-        "local_path": "/home/arpit_ubuntu/New WorkFlow/SIH-Quantum-Cracker",  # This machine
+        "team": "all",
+        "local_path": "/home/arpit_ubuntu/New WorkFlow/SIH-Quantum-Cracker",
     },
 ]
 
+
 def setup_repos(token):
-    """Create all repos and configure branch protection."""
     try:
         from github import Github, GithubException
     except ImportError:
-        print("PyGithub not installed. Installing...")
+        print("Installing PyGithub...")
         subprocess.run([sys.executable, "-m", "pip", "install", "PyGithub"], check=True)
         from github import Github, GithubException
 
     g = Github(token)
-    
+
+    # ── Find org ──────────────────────────────────────────────────────────────
     try:
         org = g.get_organization("Quantum-SIH-Cracker")
-        print(f"✅ Found organization: {org.login}")
+        print(f"✅ Organization found: {org.login}")
     except Exception as e:
-        print(f"❌ Could not find organization 'Quantum-SIH-Cracker': {e}")
-        print("   Make sure you've created the organization on GitHub first.")
+        print(f"❌ Cannot find 'Quantum-SIH-Cracker': {e}")
         return
 
-    for repo_config in REPOS:
-        name = repo_config["name"]
-        print(f"\n📦 Setting up repo: {name}")
-        
+    # ── Create GitHub teams ───────────────────────────────────────────────────
+    github_teams = {}
+    for tname in ["hardware", "ml", "server", "all-teams"]:
+        existing = {t.name: t for t in org.get_teams()}
+        if tname in existing:
+            github_teams[tname] = existing[tname]
+            print(f"   Team '{tname}' already exists")
+        else:
+            t = org.create_team(tname, privacy="secret")
+            github_teams[tname] = t
+            print(f"✅ Created team: '{tname}'")
+
+    # ── Invite members ────────────────────────────────────────────────────────
+    all_members = {m for members in TEAM_MEMBERS.values() for m in members if m}
+    for username in all_members:
         try:
-            # Check if repo already exists
+            user = g.get_user(username)
+            org.invite_user(user)
+            print(f"✅ Invited @{username} to org")
+        except Exception as e:
+            if "already" in str(e).lower():
+                print(f"   @{username} already a member")
+            else:
+                print(f"   ⚠️  @{username}: {e}")
+
+    # ── Create repos ──────────────────────────────────────────────────────────
+    for rc in REPOS:
+        name = rc["name"]
+        print(f"\n📦 {name}  [PRIVATE]")
+
+        try:
             repo = org.get_repo(name)
-            print(f"   Repo already exists: {repo.html_url}")
-        except:
-            # Create new repo
+            repo.edit(private=True)
+            print(f"   Already exists — confirmed PRIVATE ✅")
+        except GithubException:
             repo = org.create_repo(
                 name=name,
-                description=repo_config["description"],
-                private=False,
-                auto_init=True,  # Creates with README
+                description=rc["description"],
+                private=True,
+                auto_init=True,
                 has_issues=True,
                 has_projects=True,
                 has_wiki=False,
             )
-            print(f"   ✅ Created: {repo.html_url}")
-        
+            print(f"   Created (private) ✅  {repo.html_url}")
+
         # Set topics
         try:
-            repo.replace_topics(repo_config["topics"])
-            print(f"   ✅ Topics set: {', '.join(repo_config['topics'])}")
-        except Exception as e:
-            print(f"   ⚠️  Could not set topics: {e}")
-        
+            repo.replace_topics(rc["topics"])
+            print(f"   Topics set ✅")
+        except Exception:
+            pass
+
         # Create dev branch
         try:
-            main_sha = repo.get_branch("main").commit.sha
-            repo.create_git_ref(f"refs/heads/dev", main_sha)
-            print(f"   ✅ Created 'dev' branch")
+            sha = repo.get_branch("main").commit.sha
+            repo.create_git_ref("refs/heads/dev", sha)
+            print(f"   'dev' branch created ✅")
         except Exception as e:
-            if "already exists" in str(e):
-                print(f"   'dev' branch already exists")
-            else:
-                print(f"   ⚠️  Could not create dev branch: {e}")
-        
-        # Set default branch to main
+            print(f"   'dev' branch: {'already exists' if 'exists' in str(e) else e}")
+
+        # Branch protection on main
         try:
-            repo.edit(default_branch="main")
-            print(f"   ✅ Default branch: main")
-        except Exception as e:
-            print(f"   ⚠️  Could not set default branch: {e}")
-        
-        # Push local content to combined-system repo
-        if repo_config["local_path"] and os.path.exists(repo_config["local_path"]):
-            print(f"\n📤 Pushing local content to {name}...")
-            local_path = repo_config["local_path"]
-            
-            result = subprocess.run(
-                ["git", "push", "-u", "origin", "main"],
-                cwd=local_path,
-                capture_output=True,
-                text=True
+            repo.get_branch("main").edit_protection(
+                required_approving_review_count=1,
+                enforce_admins=False,
+                dismiss_stale_reviews=True,
             )
-            if result.returncode == 0:
-                print(f"   ✅ Pushed to GitHub!")
+            print(f"   Branch protection on 'main' ✅")
+        except Exception as e:
+            print(f"   ⚠️  Branch protection: {e}")
+
+        # Grant team push access
+        for tname in (["all-teams"] + ([rc["team"]] if rc["team"] != "all" else [])):
+            t = github_teams.get(tname)
+            if t:
+                try:
+                    t.add_to_repos(repo)
+                    t.set_repo_permission(repo, "push")
+                    print(f"   Team '{tname}' → push access ✅")
+                except Exception as e:
+                    print(f"   ⚠️  Team '{tname}': {e}")
+
+        # Add individual collaborators
+        collabs = list({m for m in (
+            TEAM_MEMBERS.get(rc["team"], []) if rc["team"] != "all"
+            else [m for ms in TEAM_MEMBERS.values() for m in ms]
+        ) + TEAM_MEMBERS.get("hardware", []) if m})
+
+        for username in collabs:
+            try:
+                repo.add_to_collaborators(username, permission="push")
+                print(f"   @{username} → collaborator (push) ✅")
+            except Exception as e:
+                print(f"   ⚠️  @{username}: {e}")
+
+        # Push local content (sih-combined-system only)
+        if rc["local_path"] and os.path.exists(rc["local_path"]):
+            print(f"   Pushing local content to GitHub...")
+            r = subprocess.run(
+                ["git", "push", "-u", "origin", "main"],
+                cwd=rc["local_path"], capture_output=True, text=True
+            )
+            if r.returncode == 0:
+                print(f"   Pushed ✅")
             else:
-                print(f"   ⚠️  Push failed: {result.stderr}")
-                print(f"   Try manually: cd '{local_path}' && git push -u origin main")
-    
-    print("\n\n🎉 GitHub Setup Complete!")
-    print("\nNext steps for each team:")
-    print("  Hardware Team → clone: https://github.com/Quantum-SIH-Cracker/sih-hardware-firmware")
-    print("  ML Team       → clone: https://github.com/Quantum-SIH-Cracker/sih-ml-models")
-    print("  Server Team   → clone: https://github.com/Quantum-SIH-Cracker/sih-server-backend")
-    print("  Combined      → clone: https://github.com/Quantum-SIH-Cracker/sih-combined-system")
+                print(f"   ⚠️  Push failed: {r.stderr.strip()}")
+                print(f"       Run manually: cd \"{rc['local_path']}\" && git push -u origin main")
+
+    print("\n" + "="*60)
+    print("🎉 ALL DONE — 4 private repos created.")
+    print("="*60)
+    print("\nNext steps:")
+    print("  1. Hardware (this machine): push firmware code")
+    print("     cd /your/firmware && git remote add origin https://github.com/Quantum-SIH-Cracker/sih-hardware-firmware.git")
+    print("     git push -u origin main")
+    print("  2. ML Team: accept org invite email → clone sih-ml-models")
+    print("  3. Server Team: accept org invite email → clone sih-server-backend")
+    print("  4. Workflow docs: already pushed to sih-combined-system ✅")
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Setup GitHub repos for Quantum-SIH-Cracker")
-    parser.add_argument("--token", help="GitHub Personal Access Token")
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--token", help="GitHub PAT")
     args = parser.parse_args()
-    
+
     token = args.token or os.environ.get("GITHUB_TOKEN")
     if not token:
-        print("❌ GitHub PAT required. Get one from: https://github.com/settings/tokens")
-        print("   Required scopes: repo, admin:org")
-        print("\nUsage:")
-        print("   python setup_github.py --token YOUR_TOKEN")
-        print("   OR: export GITHUB_TOKEN=YOUR_TOKEN && python setup_github.py")
+        print("❌ GitHub Personal Access Token required.\n")
+        print("Steps to get one:")
+        print("  1. Go to → https://github.com/settings/tokens/new")
+        print("  2. Note: 'SIH Setup'  |  Expiration: 90 days")
+        print("  3. Select scopes:")
+        print("       ✅ repo          (full control of private repositories)")
+        print("       ✅ admin:org     (create repos + invite members to org)")
+        print("       ✅ read:user")
+        print("  4. Click 'Generate token' and copy it")
+        print("  5. Run: python setup_github.py --token ghp_YOURTOKEN\n")
         sys.exit(1)
-    
+
     setup_repos(token)
