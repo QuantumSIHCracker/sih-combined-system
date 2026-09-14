@@ -5,7 +5,7 @@
 [![AI: TFLite Micro KWS](https://img.shields.io/badge/AI-TFLite%20Micro%20KWS-orange)](https://www.tensorflow.org/lite/microcontrollers)
 [![ASR: Faster-Whisper](https://img.shields.io/badge/ASR-Faster--Whisper-green)](https://github.com/SYSTRAN/faster-whisper)
 [![Server: FastAPI](https://img.shields.io/badge/Server-FastAPI-009688)](https://fastapi.tiangolo.com/)
-[![Organization: Quantum-SIH-Cracker](https://img.shields.io/badge/GitHub-Quantum--SIH--Cracker-black)](https://github.com/Quantum-SIH-Cracker)
+[![Organization: QuantumSIHCracker](https://img.shields.io/badge/GitHub-Quantum--SIH--Cracker-black)](https://github.com/QuantumSIHCracker)
 
 An **Edge-to-Cloud Voice Assistant** built for Smart India Hackathon 2026 (Problem Statement #26172).
 
@@ -17,10 +17,10 @@ The system uses an ESP32-S3 microcontroller to capture voice locally, run on-dev
 
 | Repository | Description | Team |
 |---|---|---|
-| [`sih-hardware-firmware`](https://github.com/Quantum-SIH-Cracker/sih-hardware-firmware) | ESP32-S3 Arduino firmware, circuit diagrams, pinout | Hardware |
-| [`sih-ml-models`](https://github.com/Quantum-SIH-Cracker/sih-ml-models) | KWS model training, MFCC pipeline, TFLite export | ML |
-| [`sih-server-backend`](https://github.com/Quantum-SIH-Cracker/sih-server-backend) | FastAPI server, Silero VAD, Faster-Whisper, dashboard | Server |
-| [`sih-combined-system`](https://github.com/Quantum-SIH-Cracker/sih-combined-system) | Integration testing, combined docs, releases | All Teams |
+| [`sih-hardware-firmware`](https://github.com/QuantumSIHCracker/sih-hardware-firmware) | ESP32-S3 Arduino firmware, circuit diagrams, pinout | Hardware |
+| [`sih-ml-models`](https://github.com/QuantumSIHCracker/sih-ml-models) | KWS model training, MFCC pipeline, TFLite export | ML |
+| [`sih-server-backend`](https://github.com/QuantumSIHCracker/sih-server-backend) | FastAPI server, Silero VAD, Faster-Whisper, dashboard | Server |
+| [`sih-combined-system`](https://github.com/QuantumSIHCracker/sih-combined-system) | Integration testing, combined docs, releases | All Teams |
 
 ---
 
@@ -56,7 +56,7 @@ cd server && pip install -r requirements.txt && python server.py
 
 ### Server Team (your machine)
 ```bash
-git clone https://github.com/Quantum-SIH-Cracker/sih-server-backend.git
+git clone https://github.com/QuantumSIHCracker/sih-server-backend.git
 cd sih-server-backend
 python3 -m venv venv && source venv/bin/activate
 pip install -r requirements.txt
@@ -66,7 +66,7 @@ python server/server.py
 
 ### ML Team (your machine)
 ```bash
-git clone https://github.com/Quantum-SIH-Cracker/sih-ml-models.git
+git clone https://github.com/QuantumSIHCracker/sih-ml-models.git
 cd sih-ml-models
 python3 -m venv venv && source venv/bin/activate
 pip install -r requirements.txt
@@ -104,7 +104,7 @@ pip install -r requirements.txt
 ## 📞 Team Contacts & Repositories
 
 - **Hardware Lead**: Arpit Kumar — WSL Ubuntu @ `/home/arpit_ubuntu`
-- **Organization**: [github.com/Quantum-SIH-Cracker](https://github.com/Quantum-SIH-Cracker)
+- **Organization**: [github.com/QuantumSIHCracker](https://github.com/QuantumSIHCracker)
 
 ---
 

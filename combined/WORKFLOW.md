@@ -1,8 +1,8 @@
 # 🔗 Combined System — Overall Workflow
-### Smart India Hackathon (SIH) 2026 | Quantum-SIH-Cracker | All Teams
+### Smart India Hackathon (SIH) 2026 | QuantumSIHCracker | All Teams
 
-> **GitHub Organization**: `https://github.com/Quantum-SIH-Cracker`
-> **Combined Repo**: `https://github.com/Quantum-SIH-Cracker/sih-combined-system`
+> **GitHub Organization**: `https://github.com/QuantumSIHCracker`
+> **Combined Repo**: `https://github.com/QuantumSIHCracker/sih-combined-system`
 > **Last Updated**: 2026-09-14
 
 ---

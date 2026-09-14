@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-GitHub Repository Setup Script for Quantum-SIH-Cracker Organization.
+GitHub Repository Setup Script for QuantumSIHCracker Organization.
 Creates all 4 PRIVATE repositories, GitHub teams, invites members, sets branch protection.
 
 Prerequisites:
@@ -200,7 +200,7 @@ def setup_repos(token):
     print("="*60)
     print("\nNext steps:")
     print("  1. Hardware (this machine): push firmware code")
-    print("     cd /your/firmware && git remote add origin https://github.com/Quantum-SIH-Cracker/sih-hardware-firmware.git")
+    print("     cd /your/firmware && git remote add origin https://github.com/QuantumSIHCracker/sih-hardware-firmware.git")
     print("     git push -u origin main")
     print("  2. ML Team: accept org invite email → clone sih-ml-models")
     print("  3. Server Team: accept org invite email → clone sih-server-backend")

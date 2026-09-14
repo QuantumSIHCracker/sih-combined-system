@@ -1,7 +1,7 @@
 # 🧠 ML Team — Complete Working Plan
-### Smart India Hackathon (SIH) 2026 | Quantum-SIH-Cracker | Team: Machine Learning
+### Smart India Hackathon (SIH) 2026 | QuantumSIHCracker | Team: Machine Learning
 
-> **Repository**: `https://github.com/Quantum-SIH-Cracker/sih-ml-models`
+> **Repository**: `https://github.com/QuantumSIHCracker/sih-ml-models`
 > **Branch Strategy**: `main` (protected) → `dev` → `experiments/<name>` branches
 > **Working Machine**: Your own computer (not Arpit's machine)
 
@@ -351,12 +351,12 @@ Open a GitHub issue in `sih-hardware-firmware` tagged `model-update` with:
 
 ### Repository
 ```
-https://github.com/Quantum-SIH-Cracker/sih-ml-models
+https://github.com/QuantumSIHCracker/sih-ml-models
 ```
 
 ### Initial Setup
 ```bash
-git clone https://github.com/Quantum-SIH-Cracker/sih-ml-models.git
+git clone https://github.com/QuantumSIHCracker/sih-ml-models.git
 cd sih-ml-models
 git config user.name "Your Name"
 git config user.email "your-email@example.com"

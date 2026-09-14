@@ -1,7 +1,7 @@
 # 🖥️ Server Team — Complete Working Plan
-### Smart India Hackathon (SIH) 2026 | Quantum-SIH-Cracker | Team: Backend & Server
+### Smart India Hackathon (SIH) 2026 | QuantumSIHCracker | Team: Backend & Server
 
-> **Repository**: `https://github.com/Quantum-SIH-Cracker/sih-server-backend`
+> **Repository**: `https://github.com/QuantumSIHCracker/sih-server-backend`
 > **Branch Strategy**: `main` (protected) → `dev` → `feature/<name>` branches
 > **Working Machine**: Your own computer (not Arpit's machine)
 
@@ -383,12 +383,12 @@ def verify_wake_word(transcript: str) -> tuple[bool, str]:
 
 ### Repository
 ```
-https://github.com/Quantum-SIH-Cracker/sih-server-backend
+https://github.com/QuantumSIHCracker/sih-server-backend
 ```
 
 ### Initial Setup
 ```bash
-git clone https://github.com/Quantum-SIH-Cracker/sih-server-backend.git
+git clone https://github.com/QuantumSIHCracker/sih-server-backend.git
 cd sih-server-backend
 git config user.name "Your Name"
 git config user.email "your-email@example.com"

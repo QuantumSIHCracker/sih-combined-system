@@ -1,8 +1,8 @@
 # 🔩 Hardware Team — Complete Working Plan
-### Smart India Hackathon (SIH) 2026 | Quantum-SIH-Cracker | Team: Hardware Firmware
+### Smart India Hackathon (SIH) 2026 | QuantumSIHCracker | Team: Hardware Firmware
 
 > **Team Lead**: Arpit Kumar (working on WSL Ubuntu: `/home/arpit_ubuntu`)
-> **Repository**: `https://github.com/Quantum-SIH-Cracker/sih-hardware-firmware`
+> **Repository**: `https://github.com/QuantumSIHCracker/sih-hardware-firmware`
 > **Branch Strategy**: `main` (protected) → `dev` → `feature/<name>` branches
 
 ---
@@ -184,12 +184,12 @@ while (Serial.available()) {
 
 ### Repository
 ```
-https://github.com/Quantum-SIH-Cracker/sih-hardware-firmware
+https://github.com/QuantumSIHCracker/sih-hardware-firmware
 ```
 
 ### Initial Setup (run once on your machine)
 ```bash
-git clone https://github.com/Quantum-SIH-Cracker/sih-hardware-firmware.git
+git clone https://github.com/QuantumSIHCracker/sih-hardware-firmware.git
 cd sih-hardware-firmware
 git config user.name "Your Name"
 git config user.email "your-email@example.com"

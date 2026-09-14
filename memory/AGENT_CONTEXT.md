@@ -8,7 +8,7 @@
 
 - **Hackathon**: Smart India Hackathon (SIH) 2026
 - **Problem Statement**: #26172
-- **GitHub Org**: `Quantum-SIH-Cracker`
+- **GitHub Org**: `QuantumSIHCracker`
 - **User (Hardware Lead)**: Arpit Kumar — working on this WSL Ubuntu machine (`/home/arpit_ubuntu`)
 - **Machine**: WSL2 Ubuntu on Windows (path: `\\wsl.localhost\Ubuntu\home\arpit_ubuntu`)
 - **Workflow Root**: `/home/arpit_ubuntu/New WorkFlow/SIH-Quantum-Cracker/`
@@ -105,14 +105,14 @@ FastAPI Server:
 
 ---
 
-## 🗂️ GitHub Repositories (Quantum-SIH-Cracker org)
+## 🗂️ GitHub Repositories (QuantumSIHCracker org)
 
 | Repo | Team | Branch Strategy |
 |---|---|---|
-| `Quantum-SIH-Cracker/sih-hardware-firmware` | Hardware | main, dev, feature/* |
-| `Quantum-SIH-Cracker/sih-ml-models` | ML | main, dev, experiments/* |
-| `Quantum-SIH-Cracker/sih-server-backend` | Server | main, dev, feature/* |
-| `Quantum-SIH-Cracker/sih-combined-system` | All Teams | main, integration, team/* |
+| `QuantumSIHCracker/sih-hardware-firmware` | Hardware | main, dev, feature/* |
+| `QuantumSIHCracker/sih-ml-models` | ML | main, dev, experiments/* |
+| `QuantumSIHCracker/sih-server-backend` | Server | main, dev, feature/* |
+| `QuantumSIHCracker/sih-combined-system` | All Teams | main, integration, team/* |
 
 ---
 
