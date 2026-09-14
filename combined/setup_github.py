@@ -68,20 +68,22 @@ REPOS = [
 
 def setup_repos(token):
     try:
-        from github import Github, GithubException
+        from github import Github, GithubException, Auth
     except ImportError:
         print("Installing PyGithub...")
         subprocess.run([sys.executable, "-m", "pip", "install", "PyGithub"], check=True)
-        from github import Github, GithubException
+        from github import Github, GithubException, Auth
 
-    g = Github(token)
+    # Use new Auth API (fixes deprecation warning)
+    g = Github(auth=Auth.Token(token))
 
     # ── Find org ──────────────────────────────────────────────────────────────
     try:
-        org = g.get_organization("Quantum-SIH-Cracker")
+        org = g.get_organization("QuantumSIHCracker")
         print(f"✅ Organization found: {org.login}")
     except Exception as e:
-        print(f"❌ Cannot find 'Quantum-SIH-Cracker': {e}")
+        print(f"❌ Cannot find 'QuantumSIHCracker': {e}")
+        print("   Check: does your token have 'admin:org' scope?")
         return
 
     # ── Create GitHub teams ───────────────────────────────────────────────────
