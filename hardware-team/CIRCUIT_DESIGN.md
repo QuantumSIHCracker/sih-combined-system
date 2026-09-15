@@ -7,11 +7,19 @@
 
 ---
 
-## 📐 Schematic — Rev 2.0
+## 📐 Schematic — Rev 4.0 (Board-Accurate)
 
-> **Rev 2.0 change**: Removed external WS2812B LED — using the LED built into the ESP32-S3 Dev Module on GPIO 48. No external LED or resistor required.
+> **Rev 4.0**: Redrawn from your actual **ESP32-S3 HW678 DevKit** board photos. Pin positions now match your physical board exactly.
 
-![Circuit Schematic Rev 2.0](circuit_schematic_rev2.jpg)
+![Circuit Schematic Rev 4.0](circuit_schematic_rev4.jpg)
+
+### Your Board: ESP32-S3 HW678 DevKit
+- **Module**: ESP32-S3-WROOM (S-N13R8)
+- **Left USB-C**: COM port → use this for programming and serial monitor
+- **Right USB-C**: USB-OTG port → for USB device mode (not used in this project)
+- **Built-in RGB LED**: visible on board, labeled "RGB" → controlled via GPIO 48 in code
+- **RST button**: resets the board
+- **BOOT button**: hold during power-on to enter flash mode if upload fails
 
 ---
 
