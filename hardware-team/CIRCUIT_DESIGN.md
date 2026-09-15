@@ -7,9 +7,11 @@
 
 ---
 
-## 📐 Schematic — Rev 1.0
+## 📐 Schematic — Rev 2.0
 
-![Circuit Schematic Rev 1.0](circuit_schematic_rev1.jpg)
+> **Rev 2.0 change**: Removed external WS2812B LED — using the LED built into the ESP32-S3 Dev Module on GPIO 48. No external LED or resistor required.
+
+![Circuit Schematic Rev 2.0](circuit_schematic_rev2.jpg)
 
 ---
 
@@ -17,18 +19,16 @@
 
 | # | Component | Specification | Qty | Purpose |
 |---|---|---|---|---|
-| 1 | ESP32-S3 Dev Module | Xtensa LX7 Dual Core, 8/16MB Flash, 8MB PSRAM | 1 | Main MCU |
+| 1 | ESP32-S3 Dev Module | Xtensa LX7 Dual Core, 8/16MB Flash, 8MB PSRAM | 1 | Main MCU — **has built-in WS2812B RGB LED on GPIO 48** |
 | 2 | INMP441 MEMS Microphone | I2S, Omnidirectional, 3.3V, -26 dBFS sensitivity | 1 | Audio capture |
-| 3 | WS2812B RGB LED | 5V tolerant, 3.3V data signal compatible | 1 | Status indicator |
-| 4 | Capacitor, 100nF (0.1µF) | Ceramic, any package | 1 | INMP441 VDD decoupling |
-| 5 | Resistor, 330Ω | 1/4W or 1/8W | 1 | WS2812B data line protection |
-| 6 | Resistor, 10kΩ | 1/4W | 1 | Optional pull-up on BOOT btn |
-| 7 | Breadboard | Full size (830 tie points) | 1 | Prototyping |
-| 8 | Jumper wires | Male-to-Male, assorted colours | 10+ | Connections |
-| 9 | USB-C cable | Data capable (not charge-only) | 1 | Programming + power |
-| 10 | 5V USB power supply | ≥ 500mA | 1 | Board power (via USB) |
+| 3 | Capacitor, 100nF (0.1µF) | Ceramic, any package | 1 | INMP441 VDD decoupling |
+| 4 | Breadboard | Full size (830 tie points) | 1 | Prototyping |
+| 5 | Jumper wires | Male-to-Male, assorted colours | 6 | Connections |
+| 6 | USB-C cable | Data capable (not charge-only) | 1 | Programming + power |
+| 7 | 5V USB power supply | ≥ 500mA | 1 | Board power (via USB) |
 
-> ⚠️ **Critical**: Use a **data-capable** USB-C cable. Charge-only cables will not show up as a serial port on your PC.
+> ✅ **No external LED required.** The ESP32-S3 Dev Module has a **WS2812B RGB LED built in on GPIO 48**. No resistor needed either — the board handles it internally.
+> ⚠️ **Critical**: Use a **data-capable** USB-C cable. Charge-only cables will not show up as a serial port.
 
 ---
 
@@ -38,14 +38,14 @@
 | From | To | Wire Colour | Notes |
 |---|---|---|---|
 | ESP32-S3 `3V3` | INMP441 `VDD` | 🔴 Red | 3.3V only — never 5V |
-| ESP32-S3 `3V3` | WS2812B `VCC` | 🔴 Red | 3.3V is sufficient for 1 LED |
 | ESP32-S3 `GND` | INMP441 `GND` | ⚫ Black | Common ground |
-| ESP32-S3 `GND` | INMP441 `L/R` | ⚫ Black | **Must be tied to GND** (selects left channel) |
-| ESP32-S3 `GND` | WS2812B `GND` | ⚫ Black | Common ground |
+| ESP32-S3 `GND` | INMP441 `L/R` | ⚫ Black | **Must be tied firmly to GND** (selects left channel) |
 | INMP441 `VDD` | Cap+ (100nF) | — | Place cap as close to VDD pin as possible |
 | Cap– (100nF) | INMP441 `GND` | — | Decoupling capacitor |
 
-### I2S Signal Lines (INMP441 → ESP32-S3)
+> ✅ **No LED wiring needed.** GPIO 48 is connected internally to the onboard WS2812B — just use it in code with `Adafruit_NeoPixel(1, 48, ...)`.
+
+### I2S Signal Lines (INMP441 ↔ ESP32-S3)
 | From | To | GPIO | Wire Colour | Function |
 |---|---|---|---|---|
 | ESP32-S3 `GPIO 4` | INMP441 `WS` | 4 | 🟡 Yellow | Word Select / LRCLK |
@@ -53,10 +53,7 @@
 | INMP441 `SD` | ESP32-S3 `GPIO 7` | 7 | 🔵 Blue | Serial Data (audio out) |
 
 ### LED Signal Line
-| From | To | GPIO | Notes |
-|---|---|---|---|
-| ESP32-S3 `GPIO 48` | 330Ω resistor | 48 | Series resistor |
-| 330Ω resistor other end | WS2812B `DIN` | — | Data in to LED |
+> ✅ **No external wiring needed.** The WS2812B RGB LED is **built into the board** and internally connected to GPIO 48. Control it directly in code — no jumper wire required.
 
 ---
 
