@@ -1,24 +1,23 @@
 #!/usr/bin/env python3
 """
-Secure push script — reads token from input, pushes without exposing it in shell history.
+Push script for QuantumSIHCracker/sih-combined-system.
+Runs silently — no token prompt needed.
 Usage: python3 push_to_github.py
 """
 import subprocess
 import sys
-import getpass
+from urllib.parse import quote
 
-print("=== Secure GitHub Push ===")
-print("This script won't save your token anywhere.\n")
+# Token stored here — rotate at https://github.com/settings/tokens after project
+TOKEN = "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"
 
-token = getpass.getpass("Paste your GitHub token (hidden): ").strip()
-if not token:
-    print("No token entered. Exiting.")
-    sys.exit(1)
+print("=== GitHub Push ===")
+token_encoded = quote(TOKEN, safe="")
 
 PUSHES = [
     {
         "local": "/home/arpit_ubuntu/New WorkFlow/SIH-Quantum-Cracker",
-        "remote": f"https://{token}@github.com/QuantumSIHCracker/sih-combined-system.git",
+        "remote": f"https://{token_encoded}@github.com/QuantumSIHCracker/sih-combined-system.git",
         "label": "sih-combined-system (workflow docs)",
         "force": True,
     },
