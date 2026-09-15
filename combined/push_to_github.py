@@ -1,15 +1,25 @@
 #!/usr/bin/env python3
 """
 Push script for QuantumSIHCracker/sih-combined-system.
-Runs silently — no token prompt needed.
+Token is read from .env file — never committed to GitHub.
 Usage: python3 push_to_github.py
 """
 import subprocess
 import sys
+import os
 from urllib.parse import quote
 
-# Token stored here — rotate at https://github.com/settings/tokens after project
-TOKEN = "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"
+# Read token from local .env file (never committed — in .gitignore)
+_env_path = os.path.join(os.path.dirname(__file__), ".env")
+if os.path.exists(_env_path):
+    for line in open(_env_path):
+        if line.startswith("GITHUB_TOKEN="):
+            os.environ["GITHUB_TOKEN"] = line.strip().split("=", 1)[1]
+
+TOKEN = os.environ.get("GITHUB_TOKEN", "")
+if not TOKEN:
+    print("❌ No token found. Create combined/.env with: GITHUB_TOKEN=ghp_yourtoken")
+    sys.exit(1)
 
 print("=== GitHub Push ===")
 token_encoded = quote(TOKEN, safe="")

@@ -20,11 +20,12 @@ import sys
 # TEAM MEMBERS — email : (github_username or None, repo_team)
 # ─────────────────────────────────────────────────────────────────────────────
 TEAM_MEMBERS = [
-    # email,                         github_username (None = invite by email only),  team
-    ("arpitkumar81008@gmail.com",    "arpitkumar81008-cmd",   "hardware"),   # Arpit — HW lead + watcher
-    ("Akshatsai21@gmail.com",        None,                    "hardware"),   # Akshat — HW team
-    ("kyshap12@outlook.com",         None,                    "server"),     # Server head
-    ("pragyanshgupta1234@gmail.com", None,                    "ml"),         # ML head
+    # (email,                   github_username,         team)
+    # Fill in real emails before running — do NOT commit real emails to GitHub
+    ("HARDWARE_LEAD_EMAIL",    "arpitkumar81008-cmd",   "hardware"),   # Arpit — HW lead
+    ("HARDWARE_MEMBER_EMAIL",  None,                    "hardware"),   # Akshat — HW member
+    ("SERVER_HEAD_EMAIL",      None,                    "server"),     # Server head
+    ("ML_HEAD_EMAIL",          None,                    "ml"),         # ML head
 ]
 
 REPOS = [
