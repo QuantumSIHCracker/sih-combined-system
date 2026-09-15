@@ -1,6 +1,6 @@
 # 🧠 Antigravity Agent Memory — SIH Quantum Cracker Project
 > Last Updated: 2026-09-14 | Model: Claude Sonnet 4.6 (Thinking)
-> This file is my permanent context store. Read this FIRST on every session.
+> **READ THIS FIRST on every new session before doing anything.**
 
 ---
 
@@ -8,165 +8,175 @@
 
 - **Hackathon**: Smart India Hackathon (SIH) 2026
 - **Problem Statement**: #26172
-- **GitHub Org**: `QuantumSIHCracker`
-- **User (Hardware Lead)**: Arpit Kumar — working on this WSL Ubuntu machine (`/home/arpit_ubuntu`)
-- **Machine**: WSL2 Ubuntu on Windows (path: `\\wsl.localhost\Ubuntu\home\arpit_ubuntu`)
+- **GitHub Org**: `QuantumSIHCracker` → https://github.com/QuantumSIHCracker
+- **Hardware Lead (User)**: Arpit Kumar — WSL Ubuntu machine at `/home/arpit_ubuntu`
 - **Workflow Root**: `/home/arpit_ubuntu/New WorkFlow/SIH-Quantum-Cracker/`
+
+---
+
+## ⚠️ Critical Context
+
+**Everything is being built fresh from scratch.** There are old code folders on this machine from a previous failed attempt — **DO NOT reference, use, or suggest code from those folders.** They exist at paths like `SIH_Voice_Assistant_Handoff/`, `Smart India hackathon/`, `SIH-ESP32-S3-Voice-Assistant/` etc. Ignore them entirely.
+
+All plans, all code, all references point ONLY to:
+- `/home/arpit_ubuntu/New WorkFlow/SIH-Quantum-Cracker/` (planning docs — this machine)
+- `https://github.com/QuantumSIHCracker/sih-hardware-firmware` (hardware team repo)
+- `https://github.com/QuantumSIHCracker/sih-ml-models` (ML team repo)
+- `https://github.com/QuantumSIHCracker/sih-server-backend` (server team repo)
+- `https://github.com/QuantumSIHCracker/sih-combined-system` (combined workflow repo)
 
 ---
 
 ## 🎯 Project Summary
 
-An **Edge-to-Cloud Voice Assistant** for Smart India Hackathon:
-- **ESP32-S3** microcontroller with **INMP441 I2S MEMS microphone**
-- **On-device Keyword Spotting (KWS)** using INT8 TFLite TENet model detecting wake word **"Ankit"**
-- Audio streamed via **USB Serial (921600 baud)** or **Wi-Fi WebSocket** to a local **FastAPI server**
-- Server runs **Silero VAD** + **Faster-Whisper (base.en, int8)** for speech-to-text
-- Real-time **SSE web dashboard** at `http://localhost:8080/dashboard`
+**Edge-to-Cloud Voice Assistant** for SIH 2026:
+- **ESP32-S3** + **INMP441 I2S MEMS microphone** — captures audio at 16kHz
+- **On-device Keyword Spotting (KWS)** — TENet INT8 TFLite model, wake word: **"Ankit"**
+- **Dual transport**: USB Serial @ 921,600 baud (demo) OR Wi-Fi WebSocket (deployment)
+- **FastAPI server** — Silero VAD + Faster-Whisper base.en + SSE dashboard
 
 ---
 
-## 🏗️ System Architecture (Canonical)
+## 🏗️ Architecture
 
 ```
-INMP441 (I2S, 16kHz, 24-bit)
-    → ESP32-S3 Core 0: DC High-Pass Filter → Gain Scaling (>>11) → True FIFO Ring Buffer (3s)
-    → ESP32-S3 Core 1: Acoustic Gatekeeper → TENet KWS (INT8 TFLite) → Trigger Queue
-                                           → Stream Manager → Packet Framer [0xAA 0x55 len_hi len_lo PCM...]
+INMP441 (I2S, 16kHz, 24-bit raw)
+  → ESP32-S3 Core 0: DC High-Pass Filter (40Hz IIR) → Gain Scale (>>11) → True FIFO Ring Buffer (3s)
+  → ESP32-S3 Core 0: Acoustic Energy Gate → TENet KWS (INT8 TFLite)
+  → ESP32-S3 Core 1: Stream Manager → Packet Framer
 
-Transport: USB Serial @ 921,600 baud (demo) OR Wi-Fi WebSocket ws://ip:8080/stream (deployment)
+Packet format: [0xAA][0x55][len_hi][len_lo][...int16 PCM LE @ 16kHz...]
+
+Transport A: USB Serial @ 921,600 baud  → FastAPI server (serial listener)
+Transport B: Wi-Fi WebSocket ws://ip:8080/stream → FastAPI server (WS endpoint)
 
 FastAPI Server:
-    → Serial/WS Listener → Session Manager
-    → Silero VAD (1.2s silence detect) → Faster-Whisper (base.en, int8)
-    → SSE Broadcast → Web Dashboard (port 8080)
-    → Stats Logger (esp32_stats.jsonl)
+  → Silero VAD (ONNX) → 1.2s silence = utterance end
+  → Faster-Whisper base.en (int8 CPU) → transcript
+  → Server-side KWS verify (regex: Ankit)
+  → SSE broadcast → Dashboard (http://localhost:8080/dashboard)
 ```
 
 ---
 
-## 📐 Hardware Specs (Confirmed Working)
+## 📐 Hardware Spec
 
-| Component | Detail |
+| Item | Value |
 |---|---|
-| MCU | ESP32-S3 Dev Module (Xtensa LX7 Dual Core @ 240 MHz) |
-| Mic | INMP441 MEMS I2S Omnidirectional |
-| Flash | 16MB (N16R8) |
+| MCU | ESP32-S3 Dev Module (Xtensa LX7 Dual Core @ 240MHz) |
+| Flash | 16MB or 8MB |
 | PSRAM | 8MB OPI |
-| Audio | 16kHz, 16-bit PCM (after conversion from 32-bit I2S) |
+| Mic | INMP441 MEMS I2S Omnidirectional |
 | Sample Rate | 16,000 Hz |
-| Baud Rate | 921,600 (USB Serial transport) |
-| Ring Buffer | 3 seconds = 48,000 samples = 96,000 bytes |
-| KWS Model | TENet INT8 TFLite, 57,264 bytes, input [1,51,1,10] INT8 |
-| Wake Word | "Ankit" (class index 0 in 5-class softmax) |
+| Bit Depth | 16-bit signed PCM (converted from 32-bit I2S) |
+| Ring Buffer | 3s = 48,000 int16 samples = 96KB |
+| Serial Baud | 921,600 |
+| WS Port | 8080 |
 
-### GPIO Pinout (Confirmed)
+### GPIO Pinout
 | Signal | GPIO |
 |---|---|
-| I2S WS (LRCLK) | GPIO 4 |
-| I2S SCK (BCLK) | GPIO 5 |
-| I2S SD (Data) | GPIO 7 |
-| BOOT Button (Trigger) | GPIO 0 |
-| Status LED (fallback) | GPIO 2 |
-| WS2812 RGB LED | GPIO 48 |
+| I2S WS (LRCLK) | 4 |
+| I2S SCK (BCLK) | 5 |
+| I2S SD (Data) | 7 |
+| BOOT button trigger | 0 |
+| Status LED (fallback) | 2 |
+| WS2812 RGB LED | 48 |
 
 ---
 
-## 🐛 Critical Bugs Already Solved (DO NOT REGRESS)
+## 🎯 Design Targets (Build Toward These)
 
-1. **Audio Sample Duplication**: Fixed with True FIFO ring buffer (separate write/read indices for Core 0/Core 1)
-2. **DC Clipping**: Fixed with 40Hz pre-scale high-pass filter BEFORE >>11 gain scaling
-3. **1000ms Serial Hang**: Fixed with non-blocking byte parser (no `readStringUntil`)
-4. **VAD Auto-Finalization Hang**: Fixed with 1.2s silence detect + 4.0s no-speech + 7.0s max utterance
-5. **Baud Rate Buffer Overrun**: Fixed by upgrading from 115200 to 921600 baud
-
----
-
-## 📊 Benchmarks (Measured, Passing)
-
-| Metric | Target | Measured |
-|---|---|---|
-| ESP32 Idle CPU | <10% | 3% |
-| ESP32 RAM Usage | <256KB | 62KB used / 194KB free |
-| Whisper Latency | Fast | 1.1s–1.3s |
-| End-to-End Latency | Conversational | ~4.5s–5.3s |
-
----
-
-## 📦 Existing Codebase Locations on this Machine
-
-| Path | Contents |
+| Metric | Target |
 |---|---|
-| `/home/arpit_ubuntu/SIH_Voice_Assistant_Handoff/` | **Master handoff package** — firmware + server + models |
-| `/home/arpit_ubuntu/SIH-ESP32-S3-Voice-Assistant/` | Git repo (arpitkumar81008-cmd) with docs + firmware + server |
-| `/home/arpit_ubuntu/Smart India hackathon/` | Working directory — server.py (823 lines), dataset, screenshots |
-| `/home/arpit_ubuntu/SIH_Voice_Assistant/` | Circuit diagrams, hardware diagnostics, models |
-| `/home/arpit_ubuntu/New WorkFlow/SIH-Quantum-Cracker/` | **THIS PROJECT'S WORKFLOW ROOT** |
+| ESP32 Idle CPU | < 10% |
+| ESP32 RAM | < 256 KB |
+| Whisper Latency | < 1.5s |
+| End-to-End Latency | < 5s |
+| KWS Accuracy | > 95% true positive |
+| False Positive Rate | < 2% |
 
 ---
 
-## 🗂️ GitHub Repositories (QuantumSIHCracker org)
+## 🚨 Known Design Pitfalls (MUST Avoid — architecture requirements)
 
-| Repo | Team | Branch Strategy |
+1. **Ring buffer**: MUST use true FIFO with separate Core0 write index and Core1 read index + mutex. A lookback approach with `delay()` causes sample duplication every chunk.
+2. **DC offset**: MUST apply 40Hz IIR high-pass filter on the RAW 32-bit I2S sample BEFORE gain scaling. Doing it after causes saturation/clipping.
+3. **Serial reading**: MUST use non-blocking byte-by-byte parser. `Serial.readStringUntil('\n')` blocks for 1000ms timeout and stalls audio.
+4. **VAD finalization**: MUST implement multiple fallbacks: silence detect (1.2s) + no-speech timeout (4s) + max utterance cap (7s). Without these the stream hangs.
+5. **Baud rate**: MUST use 921,600 baud. 16kHz 16-bit audio = 32KB/s. 115,200 baud = 11.5KB/s capacity — causes buffer overflow.
+6. **SD pin**: MUST set GPIO_PULLDOWN on the I2S SD pin. A floating SD line reads 0xFFFFFFFF.
+7. **L/R pin**: MUST tie INMP441 L/R pin firmly to GND. Floating causes wrong channel selection.
+
+---
+
+## 🔑 Protocol Contract (Sacred — all teams must follow)
+
+### Hardware → Server (audio)
+```
+[0xAA][0x55][len_hi][len_lo][...int16_t LE PCM @ 16kHz mono...]
+Valid len: 4 to 2048 bytes
+```
+
+### Hardware → Server (control, JSON + newline)
+```json
+{"event":"start"}         // wake word detected, begin session
+{"event":"telemetry","free_heap":N,"cpu_percent":N,"mic_peak":N,"uptime_ms":N}
+```
+
+### Server → Hardware (stop signal)
+```
+Serial: {"event":"stop"}\n
+WebSocket: {"event":"stop"}  (text frame)
+```
+
+---
+
+## 🗂️ KWS Model Spec
+
+| Property | Value |
+|---|---|
+| Architecture | TENet (Inverted Residual CNN) or DS-CNN |
+| Input | `[1, 51, 1, 10]` INT8 |
+| Output | `[1, 5]` INT8 |
+| Classes | 0=wake_word, 1=local_negative, 2=noise, 3=silence, 4=unknown |
+| Wake word | "Ankit" (class 0) |
+| Max size | 60 KB after INT8 quantization |
+| MFCC | 16kHz, 512-pt FFT, 10 mel bins, 320-sample hop, 51 frames/window |
+
+---
+
+## 👥 Teams
+
+| Team | Machine | Repo |
 |---|---|---|
-| `QuantumSIHCracker/sih-hardware-firmware` | Hardware | main, dev, feature/* |
-| `QuantumSIHCracker/sih-ml-models` | ML | main, dev, experiments/* |
-| `QuantumSIHCracker/sih-server-backend` | Server | main, dev, feature/* |
-| `QuantumSIHCracker/sih-combined-system` | All Teams | main, integration, team/* |
+| Hardware (Arpit) | This WSL Ubuntu machine | sih-hardware-firmware |
+| ML | Separate computer | sih-ml-models |
+| Server | Separate computer | sih-server-backend |
 
 ---
 
-## 👥 Team Structure
+## ✅ Setup Status
 
-| Team | Lead | Machine | Task |
-|---|---|---|---|
-| **Hardware** | Arpit Kumar | This machine (WSL Ubuntu) | ESP32-S3 firmware, mic integration, KWS embedding, circuit design |
-| **ML** | ML Team Lead | Separate computer | KWS model training, dataset curation, MFCC feature extraction, TFLite conversion |
-| **Server** | Server Team Lead | Separate computer | FastAPI server, VAD, Whisper, dashboard, API design |
-
----
-
-## 🔑 Key Technical Decisions
-
-- **Wake Word**: "Ankit" (changeable — coordinate with ML team on new word if needed)
-- **Transport Protocol**: Magic framing `[0xAA, 0x55, len_hi, len_lo, ...PCM bytes...]`
-- **Audio Format**: 16kHz, 16-bit signed PCM, mono, little-endian
-- **Server Port**: 8080
-- **VAD**: Silero (ONNX), threshold 0.35, 1.2s silence = end of utterance
-- **ASR**: Faster-Whisper base.en, int8 quantization, CPU inference
-- **Dashboard**: FastAPI + Server-Sent Events (SSE), no WebSocket from browser
+| Task | Status |
+|---|---|
+| Workflow docs written | ✅ Done |
+| GitHub org created (QuantumSIHCracker) | ✅ Done |
+| 4 private repos created | ✅ Done |
+| GitHub teams created | ✅ Done |
+| sih-combined-system pushed | ✅ Done |
+| Team members added to repos | ⏳ Pending (usernames not yet available) |
+| Hardware team starts coding | ⏳ Next |
+| ML team starts training | ⏳ Next |
+| Server team starts building | ⏳ Next |
 
 ---
 
-## 📋 Active Tasks & Status
+## 📋 Agent Instructions
 
-| Task | Team | Status |
-|---|---|---|
-| Generate team plans | Agent | ✅ DONE (2026-09-14) |
-| Create GitHub repos | Manual (User) | ⏳ PENDING |
-| Push existing code to repos | Hardware | ⏳ PENDING |
-| Upgrade KWS model (larger vocab, better accuracy) | ML | ⏳ PENDING |
-| Implement response actions on wake word | Server | ⏳ PENDING |
-| Wi-Fi WebSocket testing end-to-end | All | ⏳ PENDING |
-| Final demo preparation | All | ⏳ PENDING |
-
----
-
-## 🔄 Workflow Notes
-
-- Arpit (Hardware Lead) works on this WSL Ubuntu machine
-- Other teams work on separate computers and push to GitHub
-- All teams use branches (never push directly to `main`)
-- PR merges happen after testing — GitHub Actions will be set up for CI
-- This memory file should be updated after every significant decision/change
-
----
-
-## 💡 Agent Instructions for Future Sessions
-
-1. **Always read this file first** before starting any task
-2. Check `/home/arpit_ubuntu/New WorkFlow/SIH-Quantum-Cracker/` for latest plans
-3. The combined system repo is the source of truth for integration
-4. When Arpit is on hardware: focus on ESP32 Arduino IDE / C++ code
-5. When coordinating with other teams: reference the protocol spec in `combined/PROTOCOL_SPEC.md`
-6. Never break the audio framing protocol — it's the critical integration point
+1. Read this file FIRST every session
+2. NEVER reference or suggest old code from `SIH_Voice_Assistant_Handoff/`, `Smart India hackathon/`, or any other old folder
+3. All new code goes into the GitHub repos via the branch workflow
+4. When Arpit is coding (hardware team): help with ESP32-S3 C++/Arduino firmware
+5. For protocol changes: always flag and require ALL teams to agree first
+6. Update this file after any significant architectural decision

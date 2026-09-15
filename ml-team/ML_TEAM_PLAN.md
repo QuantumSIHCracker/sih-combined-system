@@ -2,220 +2,263 @@
 ### Smart India Hackathon (SIH) 2026 | QuantumSIHCracker | Team: Machine Learning
 
 > **Repository**: `https://github.com/QuantumSIHCracker/sih-ml-models`
-> **Branch Strategy**: `main` (protected) → `dev` → `experiments/<name>` branches
-> **Working Machine**: Your own computer (not Arpit's machine)
+> **Branch Strategy**: `main` (protected) → `dev` → `experiments/<name>`
+> **Working Machine**: Your own computer (separate from Arpit's machine)
+> **All new code lives in the repo above — nothing else.**
 
 ---
 
 ## 📌 Your Mission
 
-You are the **ML Team**. Your job is to:
-1. **Train and maintain** the Keyword Spotting (KWS) model that runs ON the ESP32-S3 chip
-2. **Optimize the model** to be fast, small (< 60KB), and accurate within INT8 quantization constraints
-3. **Deliver the model** as a `.tflite` file + C header for the Hardware Team to embed
-4. **Benchmark and improve** accuracy on real-world noisy voice samples from the Hardware Team
+You are the **ML Team**. You build and own:
+1. The **Keyword Spotting (KWS) model** that runs ON the ESP32-S3 chip — no cloud, no internet
+2. The **MFCC feature extraction pipeline** (must match firmware exactly)
+3. A curated, augmented **dataset** for the wake word "Ankit"
+4. **INT8 quantized TFLite** model delivery to the Hardware Team
 
-You are the **intelligence inside the device**. Without you, the device can't hear its name.
-
----
-
-## 🏗️ System Context — Where You Fit
-
-```
-                        ┌─── YOU ARE HERE ───┐
-[Audio (16kHz, 16-bit)] → [MFCC Feature Extraction] → [TENet KWS Model] → [Wake Word Decision]
-                                                              │
-                                              Your .tflite → Hardware Team embeds in firmware
-                                              Your training data → curated from real recordings
-```
-
-The model runs **on-chip** on the ESP32-S3 using **TensorFlow Lite Micro (TFLM)**:
-- Input: `[1, N_FRAMES, 1, N_MFCC_BINS]` INT8 tensor
-- Output: `[1, N_CLASSES]` INT8 softmax probabilities
-- Inference: ~5–15ms per window on ESP32-S3 @ 240MHz
-- **Maximum model size**: ~60KB (current: 57,264 bytes ✅)
+You are the **intelligence inside the device**. Without you, the device cannot hear its own name.
 
 ---
 
-## 📚 Current Model Status
+## 🏗️ Where You Fit
 
-### Existing Model (Baseline)
+```
+       ┌─────────────── YOU ARE HERE ───────────────┐
+       │                                             │
+[16kHz WAV Dataset] → [MFCC Feature Extraction] → [Model Training] → [INT8 TFLite]
+                                                                           │
+                                          Hardware Team embeds ────────────┘
+                                          this .tflite in firmware
+                                          as a C byte array header
+```
+
+The model runs **on-chip** using **TensorFlow Lite Micro (TFLM)** on the ESP32-S3:
+- Inference runs every 200ms on a sliding 1-second audio window
+- Must complete in < 15ms per window at 240MHz
+- Maximum model size: **60 KB** after INT8 quantization
+- No floating point — INT8 only
+
+---
+
+## 🎯 Model Design Specification
+
+### Architecture: TENet or DS-CNN
+Build one of these (both are proven for on-device KWS):
+
+**Option A — TENet (Temporal Efficient Network)**
+```
+Input [1, 51, 1, 10] INT8
+  → Conv2D(32, 3×3) → BN → ReLU
+  → Inverted Residual Block (DepthwiseConv2D + Conv2D 1×1)
+  → Inverted Residual Block (DepthwiseConv2D + Conv2D 1×1)
+  → Global Average Pool
+  → Dense(5) → Softmax
+Output [1, 5] INT8
+```
+
+**Option B — DS-CNN (Depthwise Separable CNN)**
+```
+Input [1, 51, 1, 10] INT8
+  → Conv2D(64, 10×4) → BN → ReLU
+  → 4× [DepthwiseConv2D(3×3) → BN → ReLU → Conv2D(64, 1×1) → BN → ReLU]
+  → Average Pool → Flatten
+  → Dense(5) → Softmax
+Output [1, 5] INT8
+```
+
+### Model Constraints (Non-Negotiable)
+| Constraint | Requirement |
+|---|---|
+| Input shape | `[1, 51, 1, 10]` INT8 |
+| Output shape | `[1, 5]` INT8 |
+| Max model size | 60 KB after INT8 quantization |
+| Supported TFLM ops | Conv2D, DepthwiseConv2D, Add, MaxPool2D, Mean, FullyConnected, Softmax, Reshape only |
+| Quantization | INT8 post-training quantization (input + output both INT8) |
+| Inference time | < 15ms per 1s window on ESP32-S3 @ 240MHz |
+
+### Output Classes
+| Index | Class | Description |
+|---|---|---|
+| **0** | **wake_word** | **"Ankit" — the target** |
+| 1 | local_negative | Phonetically similar words (Ankita, Anki, Unkit…) |
+| 2 | noise | Ambient noise: fan, AC, traffic, crowd |
+| 3 | silence | Pure silence or very low energy |
+| 4 | unknown | General speech that is not the wake word |
+
+### Trigger Condition (Hardware Team implements this)
+```
+Trigger if:
+  score[0] >= threshold  (INT8 score ≥ 0, meaning ≥ 50% probability)
+  AND score[0] > score[1]  (wake_word beats local_negative)
+  AND score[0] > score[2]  (wake_word beats noise)
+```
+
+---
+
+## 🔑 CRITICAL — MFCC Must Match Firmware Exactly
+
+> ⚠️ This is the most important constraint. If your Python MFCC does not produce the same numbers as the firmware's MFCC, the model will fail completely in production even if it has 99% accuracy in Python tests.
+
+### MFCC Parameters — Non-Negotiable
+
+| Parameter | Value | Why |
+|---|---|---|
+| Sample rate | 16,000 Hz | Firmware I2S sample rate |
+| Window size | 1.0 second = 16,000 samples | KWS sliding window |
+| Hop length | 320 samples = 20ms | 51 frames in 1 second |
+| FFT size | 512 points | Firmware FFT size |
+| Mel filterbanks | 40 intermediate → 10 output | 10 MFCC coefficients |
+| Frames per input | 51 | Input tensor time axis |
+| Frequency min | 300 Hz | Voice band low cut |
+| Frequency max | 8,000 Hz | Voice band high cut |
+
+### Reference Python Implementation
+```python
+# src/features.py — MUST match firmware computation
+import numpy as np
+import librosa
+
+def extract_mfcc(audio_samples: np.ndarray, sr: int = 16000) -> np.ndarray:
+    """
+    Extract MFCC features matching firmware parameters exactly.
+    Input:  audio_samples — int16 or float32, length = 16000 (1 second at 16kHz)
+    Output: mfcc array of shape (51, 10), float32
+    """
+    # Normalize to float32 [-1.0, 1.0] if input is int16
+    if audio_samples.dtype == np.int16:
+        audio = audio_samples.astype(np.float32) / 32768.0
+    else:
+        audio = audio_samples.astype(np.float32)
+
+    # Pad or trim to exactly 1 second
+    target_len = sr  # 16000
+    if len(audio) < target_len:
+        audio = np.pad(audio, (0, target_len - len(audio)))
+    else:
+        audio = audio[:target_len]
+
+    mfccs = librosa.feature.mfcc(
+        y=audio,
+        sr=sr,
+        n_mfcc=10,
+        n_fft=512,
+        hop_length=320,    # 20ms hop → 51 frames in 1 second
+        n_mels=40,         # intermediate mel banks
+        fmin=300,          # voice band start
+        fmax=8000,         # voice band end
+    )
+    # mfccs shape: (10, ~50 or 51) — transpose to (51, 10)
+    mfccs = mfccs.T
+    if mfccs.shape[0] < 51:
+        mfccs = np.pad(mfccs, ((0, 51 - mfccs.shape[0]), (0, 0)))
+    else:
+        mfccs = mfccs[:51, :]
+
+    return mfccs  # shape (51, 10), float32
+
+
+def quantize_to_int8(mfcc_float: np.ndarray,
+                     scale: float = None,
+                     zero_point: int = -128) -> np.ndarray:
+    """Quantize float32 MFCC to INT8 for model input."""
+    if scale is None:
+        scale = (mfcc_float.max() - mfcc_float.min()) / 255.0 + 1e-8
+    q = np.round(mfcc_float / scale + zero_point)
+    return np.clip(q, -128, 127).astype(np.int8)
+```
+
+---
+
+## 📁 Dataset Design
+
+### Required Classes and Counts
+
+| Class | Target Clips | Duration | Description |
+|---|---|---|---|
+| `wake_word` | ≥ 500 | 1s each | "Ankit" spoken naturally — various speakers, distances, styles |
+| `local_negative` | ≥ 300 | 1s each | Phonetically close: "Ankita", "Anki", "Unkit", "On kit", "Ankeet" |
+| `noise` | ≥ 500 | 1s each | Fan, AC, traffic, crowd, music — no speech |
+| `silence` | ≥ 300 | 1s each | Pure silence or very quiet room |
+| `unknown` | ≥ 500 | 1s each | General English speech — anything not the wake word |
+
+### Audio Format (All Clips Must Be)
 | Property | Value |
 |---|---|
-| Architecture | TENet (Temporal Efficient Network) — Inverted Residual CNN |
-| Input Shape | `[1, 51, 1, 10]` INT8 |
-| Output Shape | `[1, 5]` INT8 |
-| Classes | `wake_word("Ankit")`, `local_negative`, `noise`, `ambient`, `unknown` |
-| Size | 57,264 bytes (~56KB) |
-| Quantization | INT8 (post-training quantization) |
-| Wake Threshold | Raw INT8 score ≥ 0 (≥ 50% probability) + wake > negative + wake > noise |
-| Location | `/home/arpit_ubuntu/Smart India hackathon/KWS_model 1.tflite` |
+| Sample rate | 16,000 Hz |
+| Bit depth | 16-bit signed PCM |
+| Channels | Mono |
+| Duration | 1.0 second (pad shorter, trim longer) |
+| Format | `.wav` |
 
-### MFCC Feature Extraction (Currently in Firmware)
-| Parameter | Value |
-|---|---|
-| Sample Rate | 16,000 Hz |
-| Window Size | 1.0 second |
-| Hop Size | 200ms |
-| FFT Points | 512 |
-| Mel Filterbanks | 10 |
-| Temporal Frames | 51 |
-| Feature Vector | 51 × 10 INT8 MFCC spectrogram |
-
----
-
-## 🎯 Improvement Goals
-
-### Priority 1 — Accuracy
-- **Target**: >95% True Positive Rate for "Ankit" in noisy environments
-- **Target**: <2% False Positive Rate on random speech
-- **Target**: <0.5% False Positive Rate on silence/noise
-
-### Priority 2 — Latency & Size
-- **Target**: Inference time <10ms per 1s window on ESP32-S3
-- **Target**: Model size <60KB (INT8 quantized)
-- **Target**: RAM usage <10KB during inference
-
-### Priority 3 — Robustness
-- **Target**: Works at 0.5m to 3m from microphone
-- **Target**: Works in environments with TV/AC noise (SNR ≥ 10dB)
-- **Target**: Works across male, female, child voices
-
----
-
-## 📁 Dataset
-
-### Existing Dataset
-- Location: `/home/arpit_ubuntu/Smart India hackathon/dataset_v2-20260907T072628Z-1-001.zip`
-- After extracting, review the folder structure for class organization
-
-### Dataset Requirements
-| Class | Description | Target Samples |
-|---|---|---|
-| `wake_word` | "Ankit" spoken naturally | ≥ 500 clips |
-| `local_negative` | Phonetically similar: "Ankit", "Ankita", "Anki", "Unkit" | ≥ 300 clips |
-| `noise` | Ambient noise: fan, AC, traffic, crowd | ≥ 500 clips |
-| `silence` | Pure silence or very quiet rooms | ≥ 300 clips |
-| `unknown` | Random English speech (not the wake word) | ≥ 500 clips |
-
-### Audio Specifications
-- **Sample Rate**: 16,000 Hz (MUST match firmware)
-- **Bit Depth**: 16-bit PCM WAV
-- **Duration**: 1.0 second clips (pad/trim as needed)
-- **Channels**: Mono
-- **Format**: `.wav` files
+### Data Collection
+- Record wake word clips from **multiple speakers** (male, female, different accents)
+- Record at **multiple distances**: 0.5m, 1m, 2m, 3m
+- Record in **multiple environments**: quiet room, room with fan, outdoor ambient
+- Request real INMP441 recordings from the Hardware Team — these are the most valuable samples
+- Use open-source datasets for `unknown` and `noise` classes (Google Speech Commands, ESC-50, etc.)
 
 ### Data Augmentation (Apply During Training)
 ```python
-# Augmentations to apply for robustness:
+# Apply these to increase robustness — especially for wake_word class
 augmentations = [
-    "background_noise_injection",    # SNR 5–30 dB
-    "room_impulse_response",         # Simulate different room acoustics
-    "volume_perturbation",           # ±6 dB gain variation
-    "time_shift",                    # ±50ms shift
-    "pitch_shift",                   # ±2 semitones
-    "speed_perturbation",            # 0.9x – 1.1x
-    "microphone_noise",              # INMP441 noise floor simulation
+    "add_background_noise",       # inject noise clips at SNR 5–30 dB
+    "room_impulse_response",      # simulate different room acoustics
+    "volume_perturbation",        # ±6 dB gain variation
+    "time_shift",                 # ±50ms shift within the 1s window
+    "pitch_shift",                # ±2 semitones
+    "speed_perturbation",         # 0.9× to 1.1× speed
 ]
 ```
 
-### Data Collection from Hardware Team
-- Hardware Team can record real INMP441 samples using the firmware's `last_utterance.wav` output
-- Request 50+ real wake word recordings from various team members
-- These are gold-standard samples for your test set
+---
+
+## 📋 Task List (Build From Scratch)
+
+### Phase 1 — Setup & Data (Week 1)
+- [ ] Clone repo, set up Python virtual environment
+- [ ] Install all dependencies from `requirements.txt`
+- [ ] Collect and organize initial dataset (at minimum 100 wake word clips)
+- [ ] Implement `src/features.py` — MFCC extraction with exact parameters above
+- [ ] Write `tests/test_features.py` — verify output shape is `(51, 10)` for 1s of audio
+- [ ] Implement `src/dataset.py` — load WAV files, extract MFCCs, split train/val/test
+- [ ] Push to `experiments/data-pipeline`
+
+### Phase 2 — Model Training (Week 2)
+- [ ] Implement model architecture in `src/model.py` (TENet or DS-CNN)
+- [ ] Implement training script `src/train.py` with early stopping and best-model checkpoint
+- [ ] Apply data augmentation in training pipeline
+- [ ] Train initial model — target > 85% val accuracy on wake word recall
+- [ ] Implement `src/evaluate.py` — confusion matrix, precision/recall/F1 per class
+- [ ] Implement INT8 post-training quantization in `src/convert.py`
+- [ ] Verify quantized model size < 60 KB
+- [ ] Push to `experiments/model-v1`
+
+### Phase 3 — Delivery & Integration (Week 3)
+- [ ] Coordinate with Hardware Team — request 50+ real INMP441 recordings
+- [ ] Retrain/fine-tune with real hardware recordings
+- [ ] Verify model on real hardware (send tflite to Hardware Team for test flash)
+- [ ] Document model spec in `models/model_spec_v1.json`
+- [ ] Open issue on `sih-hardware-firmware` tagged `model-update` with specs
+- [ ] Tag `v1.0` on `main`
 
 ---
 
-## 🏋️ Model Architecture
+## 🛠️ Environment Setup (Your Machine)
 
-### Recommended: TENet (Current) — Keep if accuracy is sufficient
-```python
-# TENet Architecture (simplified):
-# Input: [batch, 51, 1, 10] (time_frames, 1, mfcc_bins)
-# 
-# Block 1: Conv2D(32, 3x3) → BN → ReLU
-# Block 2: DepthwiseConv2D(3x3) → BN → ReLU → Conv2D(32, 1x1) → BN → ReLU (Inverted Residual)
-# Block 3: DepthwiseConv2D(3x3) → BN → ReLU → Conv2D(64, 1x1) → BN → ReLU
-# Global Average Pool
-# Fully Connected → Softmax(5 classes)
-```
-
-### Alternative: MobileNet-V3 Small or DS-CNN
-If TENet accuracy is insufficient, these are well-proven KWS alternatives:
-- **DS-CNN (Depthwise Separable CNN)**: Excellent baseline, ~32KB INT8
-- **Temporal Convolution Network (TCN)**: Better for timing-sensitive wake words
-- **BC-ResNet**: State-of-art but larger (~80KB)
-
-**Constraint**: Whatever architecture you use MUST be compatible with these TFLM ops:
-- `Conv2D`, `DepthwiseConv2D`, `Add`, `MaxPool2D`, `Mean`, `FullyConnected`, `Softmax`, `Reshape`
-
----
-
-## 📋 Your Task List (Priority Order)
-
-### Phase 1 — Setup & Baseline (Week 1)
-- [ ] **Clone the repo** and set up Python environment
-- [ ] **Extract and organize dataset** from the zip file
-- [ ] **Run baseline evaluation** on existing `KWS_model_1.tflite` with your test data
-- [ ] **Implement MFCC feature extraction pipeline** (must match firmware exactly):
-  ```python
-  # MUST match firmware parameters:
-  SAMPLE_RATE = 16000
-  WINDOW_SEC = 1.0  # 16000 samples
-  HOP_SEC = 0.2     # 3200 samples
-  FFT_SIZE = 512
-  N_MELS = 10
-  N_FRAMES = 51
-  ```
-- [ ] **Verify feature parity**: Extract features in Python, compare against firmware output
-- [ ] Push setup code to `experiments/baseline-eval`
-
-### Phase 2 — Training & Optimization (Week 2)
-- [ ] **Collect additional data** — coordinate with Hardware Team for real INMP441 recordings
-- [ ] **Apply data augmentation** pipeline
-- [ ] **Train improved model** with expanded dataset
-- [ ] **Post-training INT8 quantization** using TFLite converter:
-  ```python
-  converter = tf.lite.TFLiteConverter.from_saved_model(saved_model_path)
-  converter.optimizations = [tf.lite.Optimize.DEFAULT]
-  converter.target_spec.supported_ops = [tf.lite.OpsSet.TFLITE_BUILTINS_INT8]
-  converter.inference_input_type = tf.int8
-  converter.inference_output_type = tf.int8
-  # Provide representative dataset for calibration
-  converter.representative_dataset = representative_dataset_gen
-  tflite_model = converter.convert()
-  ```
-- [ ] **Verify model size < 60KB** after quantization
-- [ ] **Benchmark accuracy**: precision, recall, F1, confusion matrix
-- [ ] **Verify model runs on ESP32-S3** — send `.tflite` to Hardware Team for integration test
-- [ ] Push to `experiments/improved-model`
-
-### Phase 3 — Integration & Polish (Week 3)
-- [ ] **Fine-tune based on hardware team feedback** (real-world false positive/negative reports)
-- [ ] **Document final model specs** (input tensor, classes, thresholds, quantization params)
-- [ ] **Create model card** with accuracy metrics, training data stats, limitations
-- [ ] **Tag final model v1.0** and deliver to Hardware Team
-- [ ] Push to `main` as `models/kws_model_v1.tflite`
-
----
-
-## 🛠️ Development Environment Setup (Your Machine)
-
-### Python Environment
 ```bash
-# Create and activate virtual environment
+# Clone your repo
+git clone https://github.com/QuantumSIHCracker/sih-ml-models.git
+cd sih-ml-models
+
+# Create virtual environment
 python3 -m venv venv
-source venv/bin/activate  # Windows: venv\Scripts\activate
+source venv/bin/activate        # Windows: venv\Scripts\activate
 
 # Install dependencies
-pip install tensorflow>=2.13 \
-            numpy scipy librosa \
-            scikit-learn matplotlib \
-            soundfile audiomentations \
-            tflite-runtime jupyter
+pip install -r requirements.txt
 ```
 
-### Recommended `requirements.txt`
+### `requirements.txt`
 ```
 tensorflow>=2.13.0
 numpy>=1.24
@@ -229,93 +272,62 @@ tflite-runtime>=2.13
 jupyter>=1.0
 ```
 
-### Project Structure (your repo)
+### Recommended Repo Structure
 ```
 sih-ml-models/
 ├── data/
-│   ├── raw/              # Original audio clips (not committed — add to .gitignore)
-│   ├── processed/        # MFCC feature arrays (.npy)
-│   └── augmented/        # Augmented samples
+│   ├── raw/               # Original WAV clips — add to .gitignore (too large)
+│   └── processed/         # MFCC .npy arrays — add to .gitignore
 ├── models/
-│   ├── kws_model_v1.tflite    # Current best model (committed)
-│   └── kws_model_vX.tflite    # Experimental versions
+│   ├── kws_model_v1.tflite    # Quantized model — commit this
+│   └── model_spec_v1.json     # Model spec for Hardware Team — commit this
 ├── notebooks/
 │   ├── 01_data_exploration.ipynb
 │   ├── 02_feature_extraction.ipynb
-│   ├── 03_model_training.ipynb
-│   ├── 04_quantization.ipynb
-│   └── 05_evaluation.ipynb
+│   ├── 03_training.ipynb
+│   └── 04_quantization_and_eval.ipynb
 ├── src/
-│   ├── features.py       # MFCC extraction (must match firmware)
-│   ├── dataset.py        # Dataset loading and augmentation
-│   ├── model.py          # Model architecture definitions
-│   ├── train.py          # Training script
-│   ├── evaluate.py       # Evaluation and confusion matrix
-│   └── convert.py        # TFLite conversion + INT8 quantization
+│   ├── features.py        # MFCC extraction (matches firmware)
+│   ├── dataset.py         # Dataset loading + augmentation
+│   ├── model.py           # Model architecture
+│   ├── train.py           # Training script
+│   ├── evaluate.py        # Metrics + confusion matrix
+│   └── convert.py         # TFLite INT8 quantization
 ├── tests/
-│   └── test_features.py  # Verify feature extraction matches firmware
+│   └── test_features.py   # MUST pass before any training run
+├── .gitignore
 ├── requirements.txt
 └── README.md
 ```
 
----
-
-## 🔑 Critical Technical Constraint — MFCC Must Match Firmware
-
-The firmware computes a 51×10 MFCC spectrogram on-chip. Your Python training pipeline **MUST compute the exact same features** or the model will fail in production. 
-
-```python
-# features.py — MUST match firmware's arduinoFFT computation
-import librosa
-import numpy as np
-
-def extract_mfcc_firmware_compatible(audio_samples, sr=16000):
-    """
-    Extract MFCC features matching the ESP32-S3 firmware's arduinoFFT 
-    computation exactly. Parameters are non-negotiable.
-    """
-    # Match firmware's 512-point FFT, 10 mel bins, 51 frames
-    mfccs = librosa.feature.mfcc(
-        y=audio_samples.astype(np.float32) / 32768.0,
-        sr=sr,
-        n_mfcc=10,
-        n_fft=512,
-        hop_length=320,   # 20ms hop at 16kHz = 320 samples → 51 frames in 1s
-        n_mels=40,        # intermediate mel banks before DCT → 10 coefficients
-        fmin=300,         # voice band start (matches firmware gatekeeper)
-        fmax=8000,
-    )
-    # Shape: (10, ~51) → transpose and pad/trim to exactly (51, 10)
-    mfccs = mfccs.T[:51, :]  # (51, 10)
-    if mfccs.shape[0] < 51:
-        mfccs = np.pad(mfccs, ((0, 51 - mfccs.shape[0]), (0, 0)))
-    return mfccs  # Shape: (51, 10)
-
-def quantize_to_int8(features, scale=None, zero_point=None):
-    """Quantize float features to INT8 for model input."""
-    if scale is None:
-        scale = features.std() * 4
-    if zero_point is None:
-        zero_point = 0
-    quantized = np.clip(np.round(features / scale + zero_point), -128, 127)
-    return quantized.astype(np.int8)
+### `.gitignore` for ML repo
+```
+data/raw/
+data/processed/
+data/augmented/
+__pycache__/
+*.pyc
+venv/
+*.h5
+saved_model/
+*.ckpt
 ```
 
 ---
 
 ## 📤 Deliverable Format for Hardware Team
 
-When you have a new model ready:
+When your model is ready, deliver:
 
-### 1. Provide the `.tflite` file
+### 1. TFLite File
 ```
-models/kws_model_vX.tflite
+models/kws_model_v1.tflite
 ```
 
-### 2. Provide model specification JSON
+### 2. Model Spec JSON
 ```json
 {
-  "model_version": "v1.1",
+  "model_version": "v1.0",
   "architecture": "TENet",
   "input_shape": [1, 51, 1, 10],
   "input_dtype": "INT8",
@@ -331,23 +343,46 @@ models/kws_model_vX.tflite
   "wake_word": "Ankit",
   "wake_word_class_index": 0,
   "recommended_threshold_int8": 0,
-  "input_quantization": {"scale": 0.00392, "zero_point": -128},
-  "file_size_bytes": 57264,
-  "test_accuracy": 0.96,
-  "test_recall_wake_word": 0.94,
-  "test_false_positive_rate": 0.018
+  "input_scale": 0.00392,
+  "input_zero_point": -128,
+  "file_size_bytes": 0,
+  "val_accuracy": 0.0,
+  "wake_word_recall": 0.0,
+  "false_positive_rate": 0.0,
+  "mfcc_params": {
+    "sample_rate": 16000,
+    "n_fft": 512,
+    "hop_length": 320,
+    "n_mels": 40,
+    "n_mfcc": 10,
+    "fmin": 300,
+    "fmax": 8000,
+    "frames": 51
+  }
 }
 ```
 
 ### 3. Notify Hardware Team
-Open a GitHub issue in `sih-hardware-firmware` tagged `model-update` with:
-- Model version and accuracy stats
-- Any changes to input tensor shape or class order
-- Link to your PR in `sih-ml-models`
+Open an issue on `sih-hardware-firmware` tagged `model-update`:
+- Model version and file link
+- Any changes to input shape or class order from previous version
+- Accuracy metrics and recommended threshold
 
 ---
 
-## 🔗 Git Workflow (ML Team)
+## 🎯 Design Targets
+
+| Metric | Target |
+|---|---|
+| Wake word recall (true positive rate) | > 95% |
+| False positive rate (random speech) | < 2% |
+| False positive rate (silence/noise) | < 0.5% |
+| Model size (INT8 quantized) | < 60 KB |
+| Inference time on ESP32-S3 @ 240MHz | < 15ms |
+
+---
+
+## 🔗 Git Workflow
 
 ### Repository
 ```
@@ -359,48 +394,39 @@ https://github.com/QuantumSIHCracker/sih-ml-models
 git clone https://github.com/QuantumSIHCracker/sih-ml-models.git
 cd sih-ml-models
 git config user.name "Your Name"
-git config user.email "your-email@example.com"
-
-# Create .gitignore for large files
-echo "data/raw/" >> .gitignore
-echo "data/augmented/" >> .gitignore
-echo "__pycache__/" >> .gitignore
-echo "*.pyc" >> .gitignore
-echo "venv/" >> .gitignore
-echo "*.h5" >> .gitignore
-echo "saved_model/" >> .gitignore
+git config user.email "your@email.com"
 ```
 
 ### Daily Workflow
 ```bash
-# Start new experiment
-git checkout dev
-git pull origin dev
+git checkout dev && git pull origin dev
 git checkout -b experiments/<experiment-name>
 
-# After results
+# ... run experiments ...
+
 git add models/ src/ notebooks/ tests/
-git commit -m "experiment: <describe what you tried and result>"
-git push origin experiments/<experiment-name>
+git commit -m "experiment: describe what you tried and result"
+git push origin experiments/<name>
 
-# If it's a good model, open PR: experiments/<name> → dev
-# When dev has a release-ready model: dev → main
+# Open PR: experiments/<name> → dev (when it's a good result)
+# dev → main: only when model is validated on real hardware
 ```
 
-### Commit Convention
+### Commit Message Format
 ```
-experiment: TENet + augmentation → 94% recall (was 88%)
-feat(model): add BC-ResNet architecture option
-fix(features): correct hop_length to 320 for 51 frames
-data: add 200 real INMP441 recordings from hardware team
+experiment: TENet with noise augmentation — 91% wake recall
+feat(model): add DS-CNN architecture option
+feat(features): implement MFCC extraction matching firmware params
+fix(dataset): correct hop_length to 320 for 51-frame output
+data: add 150 real INMP441 recordings from hardware team
+docs(model): update model spec JSON for v1.1
 ```
 
-### Large File Handling
+### Large Files
 ```bash
-# For models > 50MB, use Git LFS:
+# Track model files with Git LFS
 git lfs install
 git lfs track "*.tflite"
-git lfs track "*.h5"
 git lfs track "*.npy"
 git add .gitattributes
 ```
@@ -409,61 +435,65 @@ git add .gitattributes
 
 ## 🤝 Integration Points
 
-### → Hardware Team (your deliverables)
-- `.tflite` model file
-- Model spec JSON (input shape, classes, threshold)
-- Notify via GitHub issue when new model is ready
+### → Hardware Team (what you deliver)
+- `models/kws_model_vX.tflite` (INT8, < 60KB)
+- `models/model_spec_vX.json` (input shape, classes, threshold, MFCC params)
+- GitHub issue on their repo: `model-update`
 
 ### ← Hardware Team (what they give you)
-- Real audio recordings from INMP441 (`last_utterance.wav` files)
-- False positive/negative reports from real-world testing
-- Acoustic environment details (room noise floor, distance from mic)
+- Real INMP441 audio recordings (`last_utterance.wav` from testing sessions)
+- False positive/negative reports with audio clips
+- Room noise floor measurements
 
-### ← Server Team (collaboration)
-- Server also does KWS verification using regex on Whisper transcript
-- Coordinate on the exact wake word string ("Ankit") spelling/variants
-- Server team can help evaluate ASR output for model debugging
+### ↔ Server Team (shared info)
+- Wake word string ("Ankit") and known Whisper mishearing variants
+- Server also does a second-pass regex verification on the transcript
 
 ---
 
-## 🤖 AI Prompt to Start Your Work
+## 🤖 AI Prompt — Start Your Work
 
 ```
-You are an expert machine learning engineer specializing in embedded keyword spotting (KWS) for microcontrollers, TensorFlow/Keras model design, MFCC audio feature extraction, INT8 post-training quantization, and TensorFlow Lite (TFLite) model optimization.
+You are an expert ML engineer specializing in:
+- Keyword Spotting (KWS) for microcontrollers
+- TensorFlow/Keras model design (TENet, DS-CNN, MobileNet-V3)
+- MFCC audio feature extraction with librosa
+- INT8 post-training quantization with TFLite
+- TensorFlow Lite Micro (TFLM) compatibility constraints
 
-PROJECT CONTEXT:
-We are building a Smart India Hackathon (SIH) voice assistant. I am on the ML team responsible for training and maintaining the Keyword Spotting model that runs ON the ESP32-S3 chip using TensorFlow Lite Micro (TFLM).
+PROJECT: Smart India Hackathon 2026 — on-device wake word detection
+TARGET DEVICE: ESP32-S3 (Xtensa LX7 @ 240MHz), running TFLite Micro
+WAKE WORD: "Ankit" (5-class softmax: wake_word, local_negative, noise, silence, unknown)
 
-SYSTEM:
-- ESP32-S3 microcontroller (Xtensa LX7, 240MHz)
-- INMP441 MEMS microphone at 16kHz, 16-bit PCM
-- On-device inference using TFLite Micro
-- Max model size: ~60KB after INT8 quantization
-- Available TFLM ops: Conv2D, DepthwiseConv2D, Add, MaxPool2D, Mean, FullyConnected, Softmax, Reshape
-
-CURRENT MODEL:
-- Architecture: TENet (Inverted Residual CNN)
+MODEL CONSTRAINTS:
 - Input: [1, 51, 1, 10] INT8 (51 time frames × 10 MFCC bins)
-- Output: [1, 5] INT8 (5-class softmax: wake_word, local_negative, noise, silence, unknown)
-- Wake word: "Ankit" (class index 0)
-- Size: 57,264 bytes
-- Trigger condition: INT8 score ≥ 0 (≥50%) AND wake > negative AND wake > noise
+- Output: [1, 5] INT8
+- Max size: 60KB after INT8 quantization
+- TFLM ops allowed: Conv2D, DepthwiseConv2D, Add, MaxPool2D, Mean, FullyConnected, Softmax, Reshape
+- Inference must complete in < 15ms at 240MHz
 
-CRITICAL CONSTRAINT:
-MFCC features in Python training MUST exactly match firmware computation:
-- 16kHz sample rate, 512-point FFT, 10 mel bins, 320-sample hop (20ms), 51 frames per 1-second window
-- Voice band: 300–8000 Hz
+CRITICAL MFCC CONSTRAINT (must match firmware exactly):
+- 16kHz sample rate
+- 512-point FFT
+- 10 mel bins (n_mfcc=10, n_mels=40)
+- 320-sample hop (20ms) → 51 frames per 1-second window
+- fmin=300Hz, fmax=8000Hz
+- Input: 1 second of audio = 16,000 samples
+
+TARGETS:
+- Wake word recall > 95%
+- False positive rate < 2%
 
 My current task: [DESCRIBE WHAT YOU WANT TO DO]
 
-Please help me with detailed, production-ready code.
+Provide clean, well-commented, production-quality Python code.
 ```
 
 ---
 
-## 📞 Team Communication Protocol
+## 📞 Communication Protocol
 
-- **Post model updates** in team group: `[ML] New model vX ready: accuracy=X%, recall=X%, size=XKB`
-- **Request real data** from Hardware Team when you need more recordings
-- **File issues** on Hardware Team's repo when you need specific audio samples or test conditions
-- **Protocol changes** (changing input shape etc.): MUST be discussed and agreed BEFORE implementation
+- **Daily standup**: `[ML] Done: X | Doing: Y | Blocked: Z`
+- **Model ready**: Open issue on `sih-hardware-firmware` tagged `model-update`
+- **Need real recordings**: Message Hardware Team with exact format requirements
+- **Protocol changes** (input shape etc.): Must discuss ALL teams before changing — create issue tagged `protocol-change`

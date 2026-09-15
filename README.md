@@ -5,11 +5,11 @@
 [![AI: TFLite Micro KWS](https://img.shields.io/badge/AI-TFLite%20Micro%20KWS-orange)](https://www.tensorflow.org/lite/microcontrollers)
 [![ASR: Faster-Whisper](https://img.shields.io/badge/ASR-Faster--Whisper-green)](https://github.com/SYSTRAN/faster-whisper)
 [![Server: FastAPI](https://img.shields.io/badge/Server-FastAPI-009688)](https://fastapi.tiangolo.com/)
-[![Organization: QuantumSIHCracker](https://img.shields.io/badge/GitHub-Quantum--SIH--Cracker-black)](https://github.com/QuantumSIHCracker)
+[![Organization: QuantumSIHCracker](https://img.shields.io/badge/GitHub-QuantumSIHCracker-black)](https://github.com/QuantumSIHCracker)
 
 An **Edge-to-Cloud Voice Assistant** built for Smart India Hackathon 2026 (Problem Statement #26172).
 
-The system uses an ESP32-S3 microcontroller to capture voice locally, run on-device keyword spotting ("Ankit"), and stream audio to a high-performance Python server for full speech-to-text transcription.
+The system uses an ESP32-S3 microcontroller to capture voice locally, run on-device keyword spotting (wake word: "Ankit"), and stream audio to a high-performance Python server for full speech-to-text transcription.
 
 ---
 
@@ -20,7 +20,7 @@ The system uses an ESP32-S3 microcontroller to capture voice locally, run on-dev
 | [`sih-hardware-firmware`](https://github.com/QuantumSIHCracker/sih-hardware-firmware) | ESP32-S3 Arduino firmware, circuit diagrams, pinout | Hardware |
 | [`sih-ml-models`](https://github.com/QuantumSIHCracker/sih-ml-models) | KWS model training, MFCC pipeline, TFLite export | ML |
 | [`sih-server-backend`](https://github.com/QuantumSIHCracker/sih-server-backend) | FastAPI server, Silero VAD, Faster-Whisper, dashboard | Server |
-| [`sih-combined-system`](https://github.com/QuantumSIHCracker/sih-combined-system) | Integration testing, combined docs, releases | All Teams |
+| [`sih-combined-system`](https://github.com/QuantumSIHCracker/sih-combined-system) | Workflow docs, protocol spec, integration | All Teams |
 
 ---
 
@@ -42,47 +42,16 @@ The system uses an ESP32-S3 microcontroller to capture voice locally, run on-dev
 
 ---
 
-## ⚡ Quick Start
+## 📐 Design Targets
 
-### Hardware Team (Arpit's machine)
-```bash
-# Flash firmware (Arduino IDE)
-# Open: firmware/esp32_sih_hard_ware_firmware.ino
-# Board: ESP32S3 Dev Module | USB CDC On Boot: Enabled | Upload Speed: 921600
-
-# Run the server while testing
-cd server && pip install -r requirements.txt && python server.py
-```
-
-### Server Team (your machine)
-```bash
-git clone https://github.com/QuantumSIHCracker/sih-server-backend.git
-cd sih-server-backend
-python3 -m venv venv && source venv/bin/activate
-pip install -r requirements.txt
-python server/server.py
-# Dashboard: http://localhost:8080/dashboard
-```
-
-### ML Team (your machine)
-```bash
-git clone https://github.com/QuantumSIHCracker/sih-ml-models.git
-cd sih-ml-models
-python3 -m venv venv && source venv/bin/activate
-pip install -r requirements.txt
-# See notebooks/ for training pipeline
-```
-
----
-
-## 📊 Performance Benchmarks
-
-| Metric | Target | Measured |
-|---|---|---|
-| ESP32 Idle CPU | <10% | **3%** ✅ |
-| ESP32 RAM Usage | <256KB | **62KB** ✅ |
-| Whisper Latency | Fast | **1.1–1.3s** ✅ |
-| End-to-End Latency | Conversational | **4.5–5.3s** ✅ |
+| Metric | Target |
+|---|---|
+| ESP32 Idle CPU Load | < 10% |
+| ESP32 RAM Usage | < 256 KB |
+| Whisper Latency | < 1.5s |
+| End-to-End Latency | < 5s |
+| Wake Word Accuracy | > 95% |
+| False Positive Rate | < 2% |
 
 ---
 
@@ -90,32 +59,44 @@ pip install -r requirements.txt
 
 | INMP441 Pin | ESP32-S3 GPIO | Function |
 |---|---|---|
-| VDD | 3.3V | Power |
+| VDD | 3.3V | Power — never connect to 5V |
 | GND | GND | Ground |
-| **L/R** | **GND** | **Tie to GND (Left channel)** |
-| WS | GPIO 4 | I2S Word Select |
-| SCK | GPIO 5 | I2S Serial Clock |
-| SD | GPIO 7 | I2S Serial Data |
-| — | GPIO 48 | WS2812 RGB LED |
+| **L/R** | **GND** | **Must be tied to GND (Left channel)** |
+| WS | GPIO 4 | I2S Word Select (LRCLK) |
+| SCK | GPIO 5 | I2S Serial Clock (BCLK) |
+| SD | GPIO 7 | I2S Serial Data Output |
+| — | GPIO 48 | WS2812 RGB LED (status) |
 | — | GPIO 0 | BOOT button (manual trigger) |
+| — | GPIO 2 | Simple LED fallback |
 
 ---
 
-## 📞 Team Contacts & Repositories
+## 📂 Workflow Directory
 
-- **Hardware Lead**: Arpit Kumar — WSL Ubuntu @ `/home/arpit_ubuntu`
-- **Organization**: [github.com/QuantumSIHCracker](https://github.com/QuantumSIHCracker)
+All planning documents are stored at:
+```
+/home/arpit_ubuntu/New WorkFlow/SIH-Quantum-Cracker/
+├── README.md                        ← This file
+├── hardware-team/
+│   └── HARDWARE_TEAM_PLAN.md        ← Hardware team full plan
+├── ml-team/
+│   └── ML_TEAM_PLAN.md              ← ML team full plan
+├── server-team/
+│   └── SERVER_TEAM_PLAN.md          ← Server team full plan
+├── combined/
+│   ├── WORKFLOW.md                  ← Overall workflow & protocol spec
+│   ├── setup_github.py              ← GitHub repo setup script
+│   └── push_to_github.py            ← Secure push helper
+└── memory/
+    └── AGENT_CONTEXT.md             ← AI agent context (read first each session)
+```
 
 ---
 
-## 📄 Documentation
+## 📞 Organization
 
-- [Hardware Team Plan](hardware-team/HARDWARE_TEAM_PLAN.md)
-- [ML Team Plan](ml-team/ML_TEAM_PLAN.md)  
-- [Server Team Plan](server-team/SERVER_TEAM_PLAN.md)
-- [Combined Workflow](combined/WORKFLOW.md)
-- [Protocol Specification](combined/WORKFLOW.md#-communication-protocol-specification)
-- [Agent Memory / Context](memory/AGENT_CONTEXT.md)
+- **GitHub Org**: [github.com/QuantumSIHCracker](https://github.com/QuantumSIHCracker)
+- **Hardware Lead**: Arpit Kumar — working on WSL Ubuntu @ `/home/arpit_ubuntu`
 
 ---
 

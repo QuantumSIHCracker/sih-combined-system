@@ -1,170 +1,217 @@
 # 🔩 Hardware Team — Complete Working Plan
 ### Smart India Hackathon (SIH) 2026 | QuantumSIHCracker | Team: Hardware Firmware
 
-> **Team Lead**: Arpit Kumar (working on WSL Ubuntu: `/home/arpit_ubuntu`)
+> **Hardware Lead**: Arpit Kumar (WSL Ubuntu: `/home/arpit_ubuntu`)
 > **Repository**: `https://github.com/QuantumSIHCracker/sih-hardware-firmware`
-> **Branch Strategy**: `main` (protected) → `dev` → `feature/<name>` branches
+> **Branch Strategy**: `main` (protected) → `dev` → `feature/<name>`
+> **All new code lives in the repo above — nothing else.**
 
 ---
 
 ## 📌 Your Mission
 
-You are the **Hardware & Firmware Team**. Your job is to:
-1. Capture clean audio from the **INMP441 MEMS microphone** via I2S on **ESP32-S3**
-2. Run **on-device Keyword Spotting (KWS)** to detect the wake word ("Ankit") locally on chip — NO cloud needed for detection
-3. Stream the buffered audio to the Server Team over USB Serial or Wi-Fi WebSocket
-4. Keep the device reliable, low-power, and demo-ready at all times
+You are the **Hardware & Firmware Team**. You build and own:
+1. Clean audio capture from the **INMP441 MEMS mic** over I2S at 16 kHz
+2. On-device **Keyword Spotting (KWS)** — detect wake word "Ankit" locally, no cloud
+3. Reliable audio streaming to the Server Team via USB Serial or Wi-Fi WebSocket
+4. Visual status feedback via the onboard RGB LED
 
-You are the **first link in the chain**. If audio is corrupted here, nothing downstream (ML or Server) can fix it.
+You are the **first link in the chain**. Clean audio in = good transcription out.
 
 ---
 
-## 🏗️ System Context — Where You Fit
+## 🏗️ Where You Fit
 
 ```
 [INMP441 Mic] → [I2S DMA] → [Core 0: DC Filter + Gain] → [FIFO Ring Buffer (3s)]
-                                                                    │
-                                              [Acoustic Gatekeeper + TENet KWS]
-                                                                    │ (wake word detected)
-                                                          [Core 1: Stream Manager]
-                                                                    │
-                          USB Serial 921600 baud ── OR ── Wi-Fi WebSocket ws://ip:8080/stream
-                                                                    │
-                                                          [SERVER TEAM TAKES OVER]
+                                                                     │
+                                             [Acoustic Gate + TENet KWS INT8]
+                                                                     │ wake word
+                                                        [Core 1: Stream Manager]
+                                                                     │
+                         USB Serial @ 921,600 baud ── OR ── Wi-Fi WebSocket ws://ip:8080
+                                                                     │
+                                                         [SERVER TEAM TAKES OVER]
 ```
 
 ---
 
-## 📐 Hardware Reference
+## 📐 Hardware Specification
 
-### Board
-- **ESP32-S3 Dev Module** (Xtensa LX7 Dual Core @ 240 MHz, 512KB SRAM, 16MB Flash, 8MB PSRAM)
-- All production code must be Arduino IDE compatible (Arduino ESP32 Core 2.0.14 or 3.x)
+### Board: ESP32-S3 Dev Module
+- **CPU**: Xtensa LX7 Dual Core @ 240 MHz
+- **Flash**: 8MB or 16MB
+- **PSRAM**: 8MB OPI
+- **RAM**: 512KB internal SRAM
+- **Wi-Fi**: 2.4 GHz only (5 GHz NOT supported)
 
 ### Microphone: INMP441 MEMS I2S
 
-| INMP441 Pin | ESP32-S3 GPIO | Function |
-|---|---|---|
-| VDD | 3.3V | Power — **Never connect to 5V** |
-| GND | GND | Common ground |
-| **L/R** | **GND** | Channel Select — **Must be tied to GND** (selects Left I2S channel) |
-| WS | GPIO 4 | Word Select (LRCLK) |
-| SCK | GPIO 5 | Serial Clock (BCLK) |
-| SD | GPIO 7 | Serial Data Output |
-| (onboard) | GPIO 48 | WS2812 RGB LED Status |
-| (onboard) | GPIO 0 | BOOT Button (manual trigger) |
-| (onboard) | GPIO 2 | Simple status LED (fallback) |
+| INMP441 Pin | ESP32-S3 GPIO | Function | Notes |
+|---|---|---|---|
+| VDD | 3.3V | Power | **Never connect to 5V** |
+| GND | GND | Ground | Common ground rail |
+| **L/R** | **GND** | Channel select | **Must be tied firmly to GND** |
+| WS | GPIO 4 | Word Select (LRCLK) | I2S word select clock |
+| SCK | GPIO 5 | Serial Clock (BCLK) | Continuous bit clock |
+| SD | GPIO 7 | Serial Data | Audio output from mic |
+| — | GPIO 48 | WS2812 RGB LED | Status indicator |
+| — | GPIO 0 | BOOT button | Manual trigger fallback |
+| — | GPIO 2 | Simple LED | Fallback status (no RGB) |
 
-> ⚠️ **CRITICAL**: The L/R pin must be firmly soldered/connected to GND. A floating L/R pin causes audio channel selection failure.
-> ⚠️ **CRITICAL**: The firmware configures an internal pull-down on GPIO 7. A floating SD line reads `0xFFFFFFFF`.
-
-### Circuit Diagram
-Reference file: `/home/arpit_ubuntu/SIH_Voice_Assistant/circuit_diagram_A4.pdf`
+### LED Status Design
+| LED State | Meaning |
+|---|---|
+| Constant RED | Idle — waiting for speech |
+| Solid GREEN | Voice energy detected |
+| 4× RED flash | Wake word "Ankit" triggered |
+| Solid GREEN | Actively streaming audio to server |
 
 ---
 
-## ⚙️ Current Firmware State (DO NOT BREAK THESE)
+## 🏛️ Firmware Architecture Design
 
-The firmware at `/home/arpit_ubuntu/SIH_Voice_Assistant_Handoff/esp32_sih_hard_ware_firmware.ino` is **fully working and battle-tested**. Critical implementations:
+Build your firmware with this structure:
 
-### 1. True FIFO Ring Buffer
-- `ringBuffer[RING_BUFFER_SAMPLES]` with separate `ringWriteIdx` (Core 0) and `ringReadIdx` (Core 1)
-- Protected by `ringMutex` (FreeRTOS semaphore)
-- Size: `16000 samples/sec × 3 sec = 48,000 int16_t samples = 96KB`
-- **NEVER** go back to `ringBufferGetLookback()` with `delay(20)` — that caused 192 sample duplications per 20ms
-
-### 2. Pre-Scale DC High-Pass Filter (Core 0)
-```cpp
-dcTracker += (rawSample - dcTracker) >> 6;  // 40Hz cutoff IIR
-int32_t acSample = rawSample - dcTracker;   // Remove DC offset
-int32_t scaled = acSample >> 11;             // Gain scaling (INMP441 24-bit in bits [31:8])
+### Core 0 — Audio Capture Task (highest priority)
 ```
-- This MUST happen on the raw 32-bit I2S sample BEFORE the >>11 shift
-- Normal speech: 1,500–10,000 counts | Silence: <150 counts
-
-### 3. Sustained Energy Gate (Anti-false-trigger)
-```cpp
-if (peak >= SPEECH_ENERGY_THRESHOLD) {  // 850 default
-    sustainedEnergyCount++;
-    if (sustainedEnergyCount >= 2) { fireWakeWordTrigger(); }
-} else {
-    sustainedEnergyCount = 0;
-}
+Loop:
+  i2s_read(512 samples at a time)
+  → Apply 40Hz IIR DC high-pass filter on raw 32-bit sample
+  → Scale to int16 (shift right by 11)
+  → Write to True FIFO ring buffer (mutex-protected)
+  → Calculate chunk peak energy
+  → Run Acoustic Energy Gate
+  → If voice energy: run TENet KWS inference
+  → Update RGB LED based on state
 ```
-- Requires 2 consecutive chunks above threshold to trigger (prevents clicks)
 
-### 4. Non-Blocking Serial Command Reader
+### Core 1 — Stream Manager Task
+```
+Loop:
+  → Check trigger queue
+  → On trigger: send {"event":"start"} to server
+  → Set read pointer to LOOKBACK position in ring buffer
+  → Stream FIFO audio chunks until stop signal or timeout
+  → Send telemetry JSON every 3 seconds
+  → Handle "stop" signal from server (non-blocking)
+```
+
+### Ring Buffer Design
+- **Size**: 3 seconds × 16,000 samples = 48,000 `int16_t` values = 96 KB
+- **Write index**: advanced by Core 0 only
+- **Read index**: advanced by Core 1 only
+- **Mutex**: FreeRTOS `SemaphoreHandle_t` — always take before accessing either index
+- **Lookback**: on trigger, set read pointer 500ms behind current write pointer
+
+### Audio Packet Framing (The Protocol Contract)
+Every audio chunk sent to the server MUST use this exact format:
+```
+[0xAA][0x55][len_hi][len_lo][...int16_t PCM bytes, little-endian...]
+```
+- `0xAA 0x55` = magic header for server re-sync
+- `len = number of PCM bytes` (not samples), big-endian uint16
+- Typical chunk: 512 samples → 1024 bytes
+- This format is the **contract with the Server Team — never change it unilaterally**
+
+### JSON Events Format
+```cpp
+// On wake word detection (before streaming starts):
+Serial.println("{\"event\":\"start\"}");
+
+// Telemetry (every 3 seconds):
+Serial.printf("{\"event\":\"telemetry\",\"free_heap\":%u,\"cpu_percent\":%d,\"mic_peak\":%d,\"uptime_ms\":%u}\n",
+              ESP.getFreeHeap(), cpuPercent, micPeak, millis());
+
+// Listen for stop from server (non-blocking byte parser):
+// Server sends: {"event":"stop"}\n
+```
+
+---
+
+## ⚠️ Critical Design Requirements (Do Not Skip These)
+
+These are **architecture-level requirements** — get them wrong and the system breaks:
+
+### 1. True FIFO Ring Buffer (Not a Lookback)
+Use **separate write and read indices** protected by a mutex. Core 0 writes, Core 1 reads. Every sample passes through exactly once.
+> ❌ Do NOT use a single index + `delay()` to simulate a ring buffer — it causes sample duplication every chunk which makes Whisper output garbage.
+
+### 2. DC High-Pass Filter BEFORE Gain Scaling
+The INMP441 has a hardware DC bias. Apply the IIR filter on the raw **32-bit** I2S sample first, then shift:
+```
+// Correct order:
+dcTracker += (rawSample32 - dcTracker) >> 6;   // 40Hz IIR
+int32_t acSample = rawSample32 - dcTracker;    // remove DC
+int16_t scaled = (int16_t)clamp(acSample >> 11, -32768, 32767); // gain
+```
+> ❌ Do NOT apply gain first then filter — the DC offset causes the signal to saturate/clip after scaling.
+
+### 3. Non-Blocking Serial Stop Signal Reader
+Read the stop signal byte-by-byte using `Serial.available()` inside the streaming loop:
 ```cpp
 while (Serial.available()) {
-    char c = (char)Serial.read();
-    if (c == '\n' || c == '\r') {
-        // process rxCmdBuf
-    } else { rxCmdBuf[rxCmdIdx++] = c; }
+    char c = Serial.read();
+    if (c == '\n') { check_if_buffer_contains_stop(); }
+    else { append_to_cmd_buffer(c); }
 }
 ```
-- **NEVER** use `Serial.readStringUntil('\n')` — it blocks for 1000ms timeout
+> ❌ Do NOT use `Serial.readStringUntil('\n')` — it blocks for 1000ms if no newline arrives, stalling audio.
 
-### 5. Audio Packet Framing Protocol
+### 4. Baud Rate Must Be 921,600
+16kHz × 16-bit = 32,000 bytes/second of audio. The serial port must handle 3× headroom minimum.
+> ❌ 115,200 baud = ~11.5KB/s capacity — causes buffer overflow and frame drops.
+
+### 5. SD Pin Pull-Down
+Configure an internal pull-down resistor on the I2S SD pin (GPIO 7):
+```cpp
+gpio_set_pull_mode((gpio_num_t)I2S_SD_PIN, GPIO_PULLDOWN_ONLY);
 ```
-[0xAA][0x55][len_hi][len_lo][...PCM int16_t bytes (little-endian)...]
-```
-- Magic bytes `0xAA 0x55` allow server to re-sync if bytes are lost
-- `len_hi:len_lo` = number of bytes of PCM data (not samples)
-- Chunk size: 512 samples = 1024 bytes per packet
-- **This protocol is the contract with the Server Team. Do NOT change without coordinating.**
+> ❌ A floating SD line reads `0xFFFFFFFF` during silence causing false triggers.
+
+### 6. VAD Timeout Fallbacks
+Implement a hard safety cutoff (e.g. 12s) for streaming even if no stop signal arrives. The server should send stop first, but the device must not stream forever if the connection drops.
+
+### 7. Sustained Energy Gate
+Require **2 consecutive** audio chunks above the energy threshold before triggering. Single-sample clicks and pops must not trigger the wake word pipeline.
 
 ---
 
-## 📋 Your Task List (Priority Order)
+## 📋 Task List (Build From Scratch)
 
-### Phase 1 — Immediate (Week 1)
-- [ ] **Clone the repo** and verify existing firmware compiles and runs
-- [ ] **Verify audio pipeline**: Use Serial Monitor @ 921600 baud to confirm telemetry JSON output
-- [ ] **Test mic detection**: Speak — confirm mic_peak shows values 1500–10000 in telemetry
-- [ ] **Test USB Serial streaming**: Run server.py and confirm transcription works end-to-end
-- [ ] **LED verification**: Confirm RED (idle), GREEN (speech detected), 4x RED flash (wake word)
-- [ ] **Push working firmware to `feature/firmware-baseline` branch**
+### Phase 1 — Foundation (Week 1)
+- [ ] Set up Arduino IDE with ESP32-S3 board support
+- [ ] Wire INMP441 to ESP32-S3 per pinout table
+- [ ] Write basic I2S read loop — confirm audio data in Serial Monitor
+- [ ] Implement True FIFO ring buffer with FreeRTOS mutex
+- [ ] Implement DC high-pass filter + gain scaling
+- [ ] Confirm mic reads sensible values (silence < 200, speech 1500–10000)
+- [ ] Push skeleton firmware to `feature/audio-capture` branch
 
-### Phase 2 — Enhancement (Week 2)
-- [ ] **Integrate upgraded KWS model from ML Team**
-  - ML team will provide a new `.tflite` file
-  - Convert to C header: `xxd -i model.tflite > kws_model_data.h` (or use Python script below)
-  - Update `INPUT_TENSOR_SIZE` and class labels if changed
-- [ ] **Tune Acoustic Gatekeeper thresholds** based on demo room acoustics:
-  - `SPEECH_ENERGY_THRESHOLD`: increase if false triggers (default: 850)
-  - `VOICE_BAND_ENERGY_THRESHOLD`: adjust per room noise floor
-- [ ] **Test Wi-Fi WebSocket mode** (`ENABLE_NETWORK_STREAM = 1`)
-  - Coordinate with Server Team for server IP and port
-  - Test at various distances (1m, 3m, 5m from router)
-- [ ] **Power optimization**: Measure and document current draw in idle vs streaming states
+### Phase 2 — Streaming & KWS (Week 2)
+- [ ] Implement packet framing: `[0xAA][0x55][len_hi][len_lo][PCM...]`
+- [ ] Implement USB Serial streaming at 921,600 baud
+- [ ] Implement non-blocking serial stop signal reader
+- [ ] Implement acoustic energy gate (sustained 2-chunk threshold)
+- [ ] Integrate TENet KWS model (from ML Team as `kws_model_data.h`)
+- [ ] Implement trigger queue + state machine (IDLE ↔ STREAMING)
+- [ ] Implement RGB LED status (red/green/flash)
+- [ ] Implement telemetry JSON (every 3s)
+- [ ] End-to-end test: USB Serial → Server → Transcript
+- [ ] Push to `feature/streaming-kws` branch
 
-### Phase 3 — Integration & Demo Prep (Week 3)
-- [ ] **End-to-end integration test** with Server Team — full pipeline on same LAN
-- [ ] **Demo harness**: Build a reliable enclosure/mount for the ESP32-S3 + INMP441
-- [ ] **Failsafe testing**: Verify 12s safety timeout, cooldown (3s between triggers), button trigger
-- [ ] **Final firmware v1.0 tag** on `main` branch
+### Phase 3 — Wi-Fi & Polish (Week 3)
+- [ ] Implement Wi-Fi WebSocket mode (`ws://ip:8080/stream`)
+- [ ] Test Wi-Fi at 1m, 3m, 5m from router
+- [ ] Tune energy threshold per demo room acoustics
+- [ ] End-to-end Wi-Fi integration test with Server Team
+- [ ] Final tag `v1.0` on `main`
 
 ---
 
-## 🛠️ Development Environment Setup (This Machine — WSL Ubuntu)
+## 🛠️ Development Environment Setup
 
-### Arduino IDE Setup
-1. Install Arduino IDE 2.x on Windows (works with WSL via USB passthrough)
-2. Add ESP32 board manager URL:
-   ```
-   https://raw.githubusercontent.com/espressif/arduino-esp32/gh-pages/package_esp32_index.json
-   ```
-3. Install **esp32 by Espressif Systems** (version 2.0.14 or 3.x)
-
-### Required Libraries (install via Tools → Manage Libraries)
-| Library | Version | Purpose |
-|---|---|---|
-| `tflm_esp32` | 2.0.0 | TensorFlow Lite Micro for ESP32-S3 |
-| `arduinoFFT` | 2.0.4 | FFT for MFCC spectrogram |
-| `WebSockets` | 2.7.2 | Wi-Fi WebSocket client (for network mode) |
-| `ArduinoJson` | 6.x or 7.x | JSON telemetry serialization |
-
-### Arduino IDE Board Settings (Tools menu)
+### Arduino IDE Configuration (Tools menu)
 | Setting | Value |
 |---|---|
 | Board | `ESP32S3 Dev Module` |
@@ -172,159 +219,150 @@ while (Serial.available()) {
 | CPU Frequency | `240MHz (WiFi)` |
 | Flash Size | `16MB (128Mb)` or `8MB (64Mb)` |
 | Partition Scheme | `Huge APP (3MB No OTA/1MB SPIFFS)` |
-| PSRAM | `OPI PSRAM` |
+| PSRAM | `OPI PSRAM` or `Disabled` (if boot issues) |
 | Upload Speed | `921600` |
-| Port | Your COM port (e.g. COM7) |
+| Port | Your COM port |
 
-> ⚠️ **PSRAM Note**: Keep PSRAM `Disabled` in Board settings if you get bootloader halts. The firmware falls back to internal SRAM gracefully.
+### Install Board Support
+In Arduino IDE → File → Preferences, add:
+```
+https://raw.githubusercontent.com/espressif/arduino-esp32/gh-pages/package_esp32_index.json
+```
+Then Tools → Board → Boards Manager → search `esp32` by Espressif → install 2.0.14 or 3.x.
+
+### Required Libraries (Tools → Manage Libraries)
+| Library | Version | Purpose |
+|---|---|---|
+| `tflm_esp32` | 2.0.0 | TensorFlow Lite Micro for ESP32-S3 |
+| `arduinoFFT` | 2.0.4 | FFT for MFCC feature extraction |
+| `WebSockets` | 2.7.2 | Wi-Fi WebSocket client |
+| `ArduinoJson` | 6.x / 7.x | JSON telemetry serialization |
+
+> ⚠️ If you have multiple TFLite libraries installed, keep only `tflm_esp32` and remove others to avoid compilation conflicts.
 
 ---
 
-## 🔗 Git Workflow (Hardware Team)
+## 🔗 Git Workflow
 
 ### Repository
 ```
 https://github.com/QuantumSIHCracker/sih-hardware-firmware
 ```
 
-### Initial Setup (run once on your machine)
+### Initial Setup (run once)
 ```bash
 git clone https://github.com/QuantumSIHCracker/sih-hardware-firmware.git
 cd sih-hardware-firmware
 git config user.name "Your Name"
-git config user.email "your-email@example.com"
+git config user.email "your@email.com"
+git checkout dev  # always start from dev
 ```
 
 ### Daily Workflow
 ```bash
-# Start new work
-git checkout dev
-git pull origin dev
-git checkout -b feature/<your-feature-name>
+git checkout dev && git pull origin dev
+git checkout -b feature/<what-you-are-building>
 
-# After making changes
+# ... write code ...
+
 git add .
-git commit -m "feat(firmware): <describe what you changed>"
-git push origin feature/<your-feature-name>
+git commit -m "feat(firmware): describe what you built"
+git push origin feature/<name>
 
-# Then open a Pull Request on GitHub:
-#   feature/<name> → dev
-# After review and test, dev → main (protected, requires passing tests)
+# Open Pull Request on GitHub: feature/<name> → dev
+# After review → merge to dev
+# After full integration test → dev → main
 ```
 
-### Commit Message Convention
+### Commit Message Format
 ```
-feat(firmware): add Wi-Fi WebSocket reconnection logic
-fix(audio): correct DC filter coefficient for 40Hz cutoff
-test(integration): verify USB serial at 921600 baud
-docs(hardware): update GPIO pinout table
+feat(firmware): add FIFO ring buffer with FreeRTOS mutex
+feat(kws): integrate TENet INT8 model for wake word detection
+feat(transport): add Wi-Fi WebSocket streaming mode
+fix(audio): correct DC filter order before gain scaling
+fix(serial): replace blocking readStringUntil with byte parser
+test(hardware): verify INMP441 at 1m 3m distance
+docs(pinout): update GPIO table for ESP32-S3 DevKit v1.1
 ```
 
-### ⚠️ Rules
+### Rules
 - **NEVER push directly to `main`**
-- Always test firmware compiles before pushing
-- Tag release versions: `git tag -a v1.0 -m "SIH Demo Build v1.0"`
+- Always compile and test before pushing
+- If changing the audio packet format → open issue tagged `protocol-change` first
 
 ---
 
-## 🤝 Integration Points with Other Teams
+## 🤝 Integration Points
 
-### → Server Team (your outputs)
-You send them:
-1. **Audio packets** over USB Serial or Wi-Fi WebSocket using the framing protocol:
-   ```
-   [0xAA][0x55][len_hi][len_lo][...int16_t PCM samples (16kHz, mono, little-endian)...]
-   ```
-2. **JSON telemetry** every 3 seconds:
-   ```json
-   {"event":"telemetry","free_heap":194560,"cpu_percent":3,"mic_peak":2400,"uptime_ms":45000}
-   ```
-3. **Start event** when wake word detected:
-   ```json
-   {"event":"start"}
-   ```
-4. **Listen for stop signal** from server:
-   - USB Serial: `{"event":"stop"}\n`
-   - WebSocket: text message containing `"stop"`
+### → Server Team (what you deliver)
+1. **Audio stream**: binary packets `[0xAA][0x55][len_hi][len_lo][PCM int16 LE 16kHz]`
+2. **Start event**: `{"event":"start"}\n` when wake word fires
+3. **Telemetry**: `{"event":"telemetry","free_heap":N,"cpu_percent":N,"mic_peak":N,"uptime_ms":N}\n` every 3s
+4. **Stop listener**: receives `{"event":"stop"}\n` from server → stops streaming
 
-### ← ML Team (their outputs you consume)
-They give you:
-1. **New `.tflite` file** with improved KWS model
-2. **Model input specs**: tensor shape `[1, N_FRAMES, 1, N_MFCC_BINS]`, data type (INT8)
-3. **Class labels** and which index is the wake word
-4. **Recommended threshold** for the wake word score
+### ← ML Team (what they deliver to you)
+1. `model.tflite` — quantized INT8 TFLite KWS model (< 60KB)
+2. Model spec: input shape `[1, 51, 1, 10]`, output `[1, 5]`, class index for wake word
+3. Recommended score threshold for triggering
 
-**Conversion script** (to embed model in firmware):
+**Convert tflite to C header** (run once when ML delivers a new model):
 ```python
-# Run on your machine to convert .tflite → C header
+# Run: python3 tflite_to_header.py model.tflite
 import sys
-
-tflite_path = sys.argv[1]  # e.g. "new_model.tflite"
-with open(tflite_path, "rb") as f:
+with open(sys.argv[1], "rb") as f:
     data = f.read()
-
 with open("kws_model_data.h", "w") as f:
-    f.write("// Auto-generated from: " + tflite_path + "\n")
     f.write(f"const unsigned int g_kws_model_data_len = {len(data)};\n")
     f.write("const unsigned char g_kws_model_data[] = {\n  ")
-    hex_bytes = [f"0x{b:02x}" for b in data]
-    f.write(",\n  ".join([", ".join(hex_bytes[i:i+12]) for i in range(0, len(hex_bytes), 12)]))
+    rows = [", ".join(f"0x{b:02x}" for b in data[i:i+12]) for i in range(0, len(data), 12)]
+    f.write(",\n  ".join(rows))
     f.write("\n};\n")
-print(f"Generated kws_model_data.h ({len(data)} bytes)")
+print(f"Generated: kws_model_data.h ({len(data)} bytes)")
 ```
 
 ---
 
-## 🤖 AI Prompt to Start Your Work
+## 🤖 AI Prompt — Start Your Work
 
-Copy this prompt into your AI assistant to begin:
+Copy this into your AI assistant when beginning any firmware task:
 
 ```
-You are an expert embedded systems engineer specializing in ESP32-S3 firmware development, FreeRTOS real-time systems, I2S audio capture, and TensorFlow Lite Micro (TFLM) for keyword spotting.
+You are an expert embedded systems engineer specializing in:
+- ESP32-S3 firmware (Arduino IDE, FreeRTOS, Xtensa LX7)
+- I2S audio capture (INMP441 MEMS microphone)
+- TensorFlow Lite Micro (TFLM) keyword spotting on microcontrollers
+- Real-time audio DSP (IIR filters, ring buffers, energy detection)
 
-PROJECT CONTEXT:
-We are building a Smart India Hackathon (SIH) voice assistant with an ESP32-S3 microcontroller and an INMP441 MEMS I2S microphone. The system captures audio at 16kHz, runs on-device keyword spotting using a TENet INT8 TFLite model to detect the wake word "Ankit", then streams buffered audio to a FastAPI server via USB Serial (921600 baud) or Wi-Fi WebSocket.
+PROJECT: Smart India Hackathon 2026 — Edge-to-Cloud Voice Assistant
+HARDWARE: ESP32-S3 Dev Module + INMP441 MEMS mic (GPIO 4/5/7)
+WAKE WORD: "Ankit" (detected on-device via TENet INT8 TFLite model)
+TRANSPORT: USB Serial @ 921,600 baud (demo) OR Wi-Fi WebSocket ws://ip:8080/stream (deploy)
 
-MY ROLE: Hardware & Firmware Team Lead
+AUDIO PIPELINE TO BUILD:
+- I2S DMA read at 16kHz (32-bit raw → int16 after DC filter + >>11 gain)
+- True FIFO ring buffer (3s, Core 0 writes, Core 1 reads, FreeRTOS mutex)
+- Acoustic energy gate (2 consecutive chunks > threshold → KWS inference)
+- TENet INT8 TFLite inference for "Ankit" detection
+- Packet framing: [0xAA][0x55][len_hi][len_lo][int16 PCM LE...]
 
-CURRENT FIRMWARE STATE:
-- True FIFO ring buffer (3s, 48000 samples) with FreeRTOS mutex
-- Dual-core partitioning: Core 0 (I2S DMA + DC filter) / Core 1 (stream manager)
-- Pre-scale 40Hz IIR DC high-pass filter before gain scaling (>>11)
-- Sustained energy gate (2 consecutive blocks > 850 threshold to trigger)
-- Non-blocking serial command reader
-- Binary packet framing: [0xAA, 0x55, len_hi, len_lo, ...PCM int16_t...]
-- Dual transport: USB Serial @ 921600 baud / Wi-Fi WebSocket ws://ip:8080/stream
-- WS2812 RGB LED status (GPIO 48): RED=idle, GREEN=voice, 4xRED flash=wake word
+CRITICAL DESIGN RULES:
+1. True FIFO ring buffer — separate read/write indices, never lookback + delay
+2. DC filter on raw 32-bit sample BEFORE >>11 gain scaling
+3. Non-blocking serial reader (Serial.available() loop, never readStringUntil)
+4. 921,600 baud serial — lower rates cause buffer overflow
+5. Pull-down on GPIO 7 (I2S SD pin) — prevents floating line artifacts
+6. Sustained energy gate — 2 chunks minimum before trigger
 
-CRITICAL BUGS ALREADY SOLVED (don't regress):
-1. Sample duplication (was reading 512 samples every 20ms, only 320 new → fixed with true FIFO)
-2. DC clipping (was >>14 after bias → fixed with pre-scale filter then >>11)
-3. 1000ms serial hang (was readStringUntil → fixed with non-blocking byte parser)
-4. VAD hang (15s stream → fixed with 1.2s silence + 4s no-speech + 7s max cap)
-5. Baud rate overflow (115200 → 921600)
+My current task: [DESCRIBE WHAT YOU WANT TO BUILD]
 
-My current task: [DESCRIBE WHAT YOU WANT TO DO]
-
-Please help me implement/debug/optimize this while preserving all existing functionality.
+Provide production-quality, well-commented Arduino/C++ code.
 ```
 
 ---
 
-## 📁 File Reference
+## 📞 Communication Protocol
 
-| File | Location | Purpose |
-|---|---|---|
-| Main Firmware | `firmware/esp32_sih_hard_ware_firmware.ino` | Primary ESP32-S3 code |
-| KWS Model Header | `firmware/kws_model_data.h` | Embedded TFLite model bytes |
-| Circuit Diagram PDF | `docs/circuit_diagram_A4.pdf` | Printable A4 schematic |
-| Circuit Diagram PNG | `docs/circuit_diagram_A4.png` | High-res wiring reference |
-
----
-
-## 📞 Team Communication Protocol
-
-- **Daily standup**: Post progress in team group with format: `[HW] Done: X | Doing: Y | Blocked: Z`
-- **Integration sync**: Every 2 days with Server Team to verify protocol compliance
-- **Critical issues**: Tag `@server-team` or `@ml-team` in GitHub issue immediately
-- **Protocol changes**: MUST be agreed by ALL teams before implementation — create a GitHub issue tagged `protocol-change`
+- **Daily standup**: `[HW] Done: X | Doing: Y | Blocked: Z`
+- **Protocol changes**: Open GitHub issue tagged `protocol-change` BEFORE changing anything
+- **Model update from ML**: They open an issue on your repo tagged `model-update`
+- **Server integration sync**: Every 2 days — verify packet format and events are working
