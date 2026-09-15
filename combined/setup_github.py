@@ -17,22 +17,15 @@ import subprocess
 import sys
 
 # ─────────────────────────────────────────────────────────────────────────────
-# FILL IN YOUR TEAM MEMBERS' GITHUB USERNAMES BEFORE RUNNING
+# TEAM MEMBERS — email : (github_username or None, repo_team)
 # ─────────────────────────────────────────────────────────────────────────────
-TEAM_MEMBERS = {
-    "hardware": [
-        "arpitkumar81008-cmd",   # Arpit (Hardware Lead — org owner)
-        # "hardware-member-2",   # ← add more if needed
-    ],
-    "ml": [
-        # "ml-lead-username",
-        # "ml-member-2-username",
-    ],
-    "server": [
-        # "server-lead-username",
-        # "server-member-2-username",
-    ],
-}
+TEAM_MEMBERS = [
+    # email,                         github_username (None = invite by email only),  team
+    ("arpitkumar81008@gmail.com",    "arpitkumar81008-cmd",   "hardware"),   # Arpit — HW lead + watcher
+    ("Akshatsai21@gmail.com",        None,                    "hardware"),   # Akshat — HW team
+    ("kyshap12@outlook.com",         None,                    "server"),     # Server head
+    ("pragyanshgupta1234@gmail.com", None,                    "ml"),         # ML head
+]
 
 REPOS = [
     {
@@ -98,18 +91,33 @@ def setup_repos(token):
             github_teams[tname] = t
             print(f"✅ Created team: '{tname}'")
 
-    # ── Invite members ────────────────────────────────────────────────────────
-    all_members = {m for members in TEAM_MEMBERS.values() for m in members if m}
-    for username in all_members:
-        try:
-            user = g.get_user(username)
-            org.invite_user(user)
-            print(f"✅ Invited @{username} to org")
-        except Exception as e:
-            if "already" in str(e).lower():
-                print(f"   @{username} already a member")
-            else:
-                print(f"   ⚠️  @{username}: {e}")
+    # ── Invite members by email or username ──────────────────────────────────
+    for email, username, team in TEAM_MEMBERS:
+        # Try by username first (gives immediate access), fall back to email invite
+        invited = False
+        if username:
+            try:
+                user = g.get_user(username)
+                org.invite_user(user)
+                print(f"✅ Invited @{username} ({email}) to org")
+                invited = True
+            except Exception as e:
+                if "already" in str(e).lower():
+                    print(f"   @{username} already a member")
+                    invited = True
+                else:
+                    print(f"   ⚠️  Username invite failed for @{username}: {e}")
+
+        if not invited:
+            # Invite by email directly
+            try:
+                org.invite_user(email=email)
+                print(f"✅ Org invite sent to {email} (team: {team})")
+            except Exception as e:
+                if "already" in str(e).lower():
+                    print(f"   {email} already invited/member")
+                else:
+                    print(f"   ⚠️  Email invite failed for {email}: {e}")
 
     # ── Create repos ──────────────────────────────────────────────────────────
     for rc in REPOS:
@@ -169,18 +177,18 @@ def setup_repos(token):
                 except Exception as e:
                     print(f"   ⚠️  Team '{tname}': {e}")
 
-        # Add individual collaborators
-        collabs = list({m for m in (
-            TEAM_MEMBERS.get(rc["team"], []) if rc["team"] != "all"
-            else [m for ms in TEAM_MEMBERS.values() for m in ms]
-        ) + TEAM_MEMBERS.get("hardware", []) if m})
-
-        for username in collabs:
-            try:
-                repo.add_to_collaborators(username, permission="push")
-                print(f"   @{username} → collaborator (push) ✅")
-            except Exception as e:
-                print(f"   ⚠️  @{username}: {e}")
+        # Add individual collaborators (only those with known GitHub usernames)
+        repo_team = rc["team"]
+        for email, username, member_team in TEAM_MEMBERS:
+            if not username:
+                continue  # Can only add collaborators by username, not email
+            # Add to repo if member is on this team, hardware team (always), or repo is combined
+            if repo_team == "all" or member_team == repo_team or member_team == "hardware":
+                try:
+                    repo.add_to_collaborators(username, permission="push")
+                    print(f"   @{username} → collaborator (push) ✅")
+                except Exception as e:
+                    print(f"   ⚠️  @{username}: {e}")
 
         # Push local content (sih-combined-system only)
         if rc["local_path"] and os.path.exists(rc["local_path"]):
