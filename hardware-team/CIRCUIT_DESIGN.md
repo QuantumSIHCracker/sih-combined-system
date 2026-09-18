@@ -7,11 +7,11 @@
 
 ---
 
-## 📐 Schematic — Rev 4.0 (Board-Accurate)
+## 📐 Schematic — Final Soldered Build
 
-> **Rev 4.0**: Redrawn from your actual **ESP32-S3 HW678 DevKit** board photos. Pin positions now match your physical board exactly.
+> **Final Edition**: Designed for direct soldering. Breadboard issues eliminated. 
 
-![Circuit Schematic Rev 4.0](circuit_schematic_rev4.jpg)
+![Circuit Schematic Final](circuit_schematic_final_soldered.jpg)
 
 ### Your Board: ESP32-S3 HW678 DevKit
 - **Module**: ESP32-S3-WROOM (S-N13R8)
