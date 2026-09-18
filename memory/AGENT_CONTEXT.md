@@ -165,8 +165,10 @@ WebSocket: {"event":"stop"}  (text frame)
 | 4 private repos created | ✅ Done |
 | GitHub teams created | ✅ Done |
 | sih-combined-system pushed | ✅ Done |
+| Hardware team: Wiring & Schematic | ✅ Done (Rev 5.0 Soldered) |
+| Hardware team: Baseline Firmware | ✅ Done (in `hardware-team/opus_fixes/`) |
 | Team members added to repos | ⏳ Pending (usernames not yet available) |
-| Hardware team starts coding | ⏳ Next |
+| Hardware team starts KWS integration | ⏳ Next |
 | ML team starts training | ⏳ Next |
 | Server team starts building | ⏳ Next |
 
